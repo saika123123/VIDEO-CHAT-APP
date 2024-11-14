@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import RoomClient from './RoomClient';
 
 function Loading() {
     return <div>Loading...</div>;

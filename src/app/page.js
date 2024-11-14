@@ -9,7 +9,7 @@ export default function Home() {
   const router = useRouter();
 
   const handleJoin = async (e) => {
-    e.preventDefault(); // フォームのデフォルトの送信を防ぐ
+    e.preventDefault();
 
     if (!name.trim()) {
       setError('名前を入力してください');
@@ -20,27 +20,31 @@ export default function Home() {
     setError('');
 
     try {
-      // APIをテストする
-      const testResponse = await fetch('/api/rooms', { method: 'GET' });
-      if (!testResponse.ok) {
-        throw new Error('APIサーバーに接続できません');
-      }
-
-      // メインのリクエスト
       const response = await fetch('/api/rooms', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({
+          name: name.trim()
+        }),
+        cache: 'no-store'
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'エラーが発生しました');
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Response parsing error:', parseError);
+        console.log('Raw response:', await response.text());
+        throw new Error('レスポンスの解析に失敗しました');
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'エラーが発生しました');
+      }
+
       if (data.roomId && data.userId) {
         router.push(`/${data.roomId}?user=${data.userId}`);
       } else {
@@ -82,8 +86,9 @@ export default function Home() {
           <button
             type="submit"
             disabled={isLoading || !name.trim()}
-            className="w-full py-3 bg-blue-600 text-white rounded-lg text-lg font-semibold
-              hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+            className={`w-full py-3 text-white rounded-lg text-lg font-semibold
+              ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} 
+              transition-colors`}
           >
             {isLoading ? '接続中...' : '参加する'}
           </button>

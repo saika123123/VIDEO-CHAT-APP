@@ -8,8 +8,11 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:3000",
-        methods: ["GET", "POST"]
+        origin: process.env.NODE_ENV === 'development' 
+            ? "http://localhost:3000" 
+            : "あなたの本番環境のドメイン",
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 

@@ -11,14 +11,33 @@ const configuration = {
 
 export default function VideoRoom({ roomId, userId }) {
     const [users, setUsers] = useState([]);
+    const [userName, setUserName] = useState('');  // ユーザー名の状態を追加
     const [background, setBackground] = useState('/backgrounds/default.jpg');
     const socketRef = useRef();
     const peersRef = useRef({});
     const localStreamRef = useRef();
     const [isConnecting, setIsConnecting] = useState(true);
 
+    // ユーザー名を取得する処理を追加
     useEffect(() => {
-        if (!roomId || !userId) return;
+        const fetchUserName = async () => {
+            try {
+                const response = await fetch(`/api/users/${userId}`);
+                const data = await response.json();
+                setUserName(data.name || 'ゲスト');
+            } catch (error) {
+                console.error('Error fetching user name:', error);
+                setUserName('ゲスト');
+            }
+        };
+
+        if (userId) {
+            fetchUserName();
+        }
+    }, [userId]);
+
+    useEffect(() => {
+        if (!roomId || !userId || !userName) return;  // userName も確認
 
         navigator.mediaDevices.getUserMedia({
             video: true,
@@ -27,8 +46,13 @@ export default function VideoRoom({ roomId, userId }) {
             localStreamRef.current = stream;
             setIsConnecting(false);
 
+            // ユーザー名を含めてSocket.IO接続を確立
             socketRef.current = io('http://localhost:3001', {
-                query: { roomId, userId }
+                query: {
+                    roomId,
+                    userId,
+                    userName    // ユーザー名を追加
+                }
             });
 
             socketRef.current.on('users', (users) => {
@@ -42,6 +66,7 @@ export default function VideoRoom({ roomId, userId }) {
                 });
             });
 
+            // 以下は既存のコード
             socketRef.current.on('offer', handleReceiveOffer);
             socketRef.current.on('answer', handleReceiveAnswer);
             socketRef.current.on('ice-candidate', handleNewICECandidate);
@@ -55,7 +80,7 @@ export default function VideoRoom({ roomId, userId }) {
             socketRef.current?.disconnect();
             Object.values(peersRef.current).forEach(peer => peer.close());
         };
-    }, [roomId, userId]);
+    }, [roomId, userId, userName]);
 
     function createPeer(targetSocketId) {
         const peer = new RTCPeerConnection(configuration);
