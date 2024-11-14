@@ -11,6 +11,7 @@ export default function RoomClient({ roomId }) {
     useEffect(() => {
         if (!userId) {
             router.push('/');
+            return;
         }
     }, [userId, router]);
 
@@ -22,5 +23,9 @@ export default function RoomClient({ roomId }) {
         );
     }
 
-    return <VideoRoom roomId={roomId} userId={userId} />;
+    return (
+        <div className="min-h-screen">
+            <VideoRoom roomId={roomId} userId={userId} />
+        </div>
+    );
 }

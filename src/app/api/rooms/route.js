@@ -1,67 +1,58 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/db';
 import { nanoid } from 'nanoid';
 import { NextResponse } from 'next/server';
-
-// 新しいPrismaClientインスタンスを作成
-const prisma = new PrismaClient();
 
 export async function POST(req) {
     try {
         // リクエストボディを取得
         const data = await req.json();
+        console.log('Received request data:', data);  // デバッグログ追加
 
         if (!data?.name) {
-            return NextResponse.json({
-                error: '名前は必須です'
-            }, {
-                status: 400
-            });
+            console.log('Validation failed: name is required');  // デバッグログ追加
+            return NextResponse.json(
+                { error: '名前は必須です' },
+                { status: 400 }
+            );
         }
 
-        // ルームを作成
-        const room = await prisma.room.create({
-            data: {
-                id: nanoid(10)
-            }
-        });
+        // トランザクションを使用してデータを作成
+        const result = await prisma.$transaction(async (tx) => {
+            // ルーム作成
+            const room = await tx.room.create({
+                data: {
+                    id: nanoid(10),
+                    backgroundUrl: '/backgrounds/default.jpg'
+                }
+            });
+            console.log('Room created:', room);  // デバッグログ追加
 
-        // ユーザーを作成
-        const user = await prisma.user.create({
-            data: {
-                name: data.name,
-                roomId: room.id
-            }
+            // ユーザー作成
+            const user = await tx.user.create({
+                data: {
+                    name: data.name.trim(),
+                    roomId: room.id
+                }
+            });
+            console.log('User created:', user);  // デバッグログ追加
+
+            return { room, user };
         });
 
         // 成功レスポンス
-        return NextResponse.json({
-            roomId: room.id,
-            userId: user.id
-        }, {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        const response = {
+            roomId: result.room.id,
+            userId: result.user.id
+        };
+        console.log('Sending response:', response);  // デバッグログ追加
+
+        return NextResponse.json(response);
 
     } catch (error) {
         console.error('API Error:', error);
-
-        return NextResponse.json({
-            error: 'サーバーエラーが発生しました'
-        }, {
-            status: 500
-        });
-    } finally {
-        await prisma.$disconnect();
+        return NextResponse.json(
+            { error: 'サーバーエラーが発生しました' },
+            { status: 500 }
+        );
     }
-}
-
-// GET メソッドのテスト用エンドポイント
-export async function GET() {
-    return NextResponse.json({
-        status: 'ok'
-    }, {
-        status: 200
-    });
 }
