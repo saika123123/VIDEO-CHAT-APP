@@ -7,18 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model room {
+model Room {
   id            String   @id
   backgroundUrl String?  @default("/backgrounds/default.jpg")
   createdAt     DateTime @default(now())
-  user          user[]
+  users         User[]
 }
 
-model user {
+model User {
   id     String  @id
   name   String
   roomId String?
-  room   room?   @relation(fields: [roomId], references: [id], map: "User_roomId_fkey")
-
-  @@index([roomId], map: "User_roomId_fkey")
+  room   Room?   @relation(fields: [roomId], references: [id])
 }
