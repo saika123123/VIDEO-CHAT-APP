@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import BackgroundSelector from './BackgroundSelector';
 
-// WebRTC設定を最適化
+// WebRTC設定
 const configuration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -16,7 +16,7 @@ const configuration = {
     rtcpMuxPolicy: 'require'
 };
 
-// メディア制約を最適化
+// メディア制約
 const mediaConstraints = {
     audio: {
         echoCancellation: true,
@@ -85,6 +85,8 @@ export default function VideoRoom({ roomId, userId }) {
     const peersRef = useRef({});
     const localStreamRef = useRef();
     const userNameFetchedRef = useRef(false);
+    const makingOfferRef = useRef(false);
+    const isSettingRemoteAnswerRef = useRef(false);
 
     // デバッグ情報を更新する関数
     const updateDebugInfo = (info) => {
@@ -113,10 +115,19 @@ export default function VideoRoom({ roomId, userId }) {
             return null;
         }
     };
-
-    // WebRTC Peer接続を作成する関数
+    // createPeer関数の定義
     const createPeer = (targetSocketId, isInitiator = true) => {
+        console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
+
+        if (peersRef.current[targetSocketId]) {
+            peersRef.current[targetSocketId].close();
+            delete peersRef.current[targetSocketId];
+        }
+
         const peer = new RTCPeerConnection(configuration);
+        let makingOffer = false;
+        let ignoreOffer = false;
+        let isSettingRemoteAnswer = false;
 
         peer.onconnectionstatechange = () => {
             console.log(`Connection state for ${targetSocketId}:`, peer.connectionState);
@@ -130,6 +141,7 @@ export default function VideoRoom({ roomId, userId }) {
 
         peer.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
+                console.log('Sending ICE candidate:', candidate);
                 socketRef.current.emit('ice-candidate', {
                     candidate,
                     to: targetSocketId
@@ -138,38 +150,69 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         peer.ontrack = (event) => {
+            console.log('ontrack event:', event);
             const remoteStream = event.streams[0];
+            if (!remoteStream) {
+                console.warn('No remote stream available');
+                return;
+            }
+
             setUsers(prevUsers => {
-                const updatedUsers = prevUsers.map(user => {
-                    if (user.socketId === targetSocketId) {
-                        return { ...user, stream: remoteStream };
+                const existingUserIndex = prevUsers.findIndex(u => u.socketId === targetSocketId);
+                if (existingUserIndex >= 0) {
+                    if (prevUsers[existingUserIndex].stream?.id === remoteStream.id) {
+                        return prevUsers;
                     }
-                    return user;
-                });
-
-                if (!updatedUsers.find(u => u.socketId === targetSocketId)) {
-                    updatedUsers.push({
-                        socketId: targetSocketId,
-                        stream: remoteStream,
-                        userId: null,
-                        userName: 'Connecting...'
-                    });
+                    const updatedUsers = [...prevUsers];
+                    updatedUsers[existingUserIndex] = {
+                        ...updatedUsers[existingUserIndex],
+                        stream: remoteStream
+                    };
+                    return updatedUsers;
                 }
-
-                return updatedUsers;
+                return [...prevUsers, {
+                    socketId: targetSocketId,
+                    stream: remoteStream,
+                    userId: null,
+                    userName: 'Connecting...'
+                }];
             });
         };
 
+        // ネゴシエーション処理の改善
+        peer.onnegotiationneeded = async () => {
+            try {
+                if (makingOfferRef.current) return;
+                makingOfferRef.current = true;
+
+                await peer.setLocalDescription();
+
+                socketRef.current.emit('offer', {
+                    offer: peer.localDescription,
+                    to: targetSocketId
+                });
+            } catch (err) {
+                console.error('Negotiation failed:', err);
+            } finally {
+                makingOfferRef.current = false;
+            }
+        };
+
+        // メディアストリームの追加
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => {
-                peer.addTrack(track, localStreamRef.current);
+                try {
+                    peer.addTrack(track, localStreamRef.current);
+                } catch (err) {
+                    console.error('Error adding track:', err);
+                }
             });
         }
 
         return peer;
     };
 
-    // Socket.IO接続の初期化
+
     const initializeSocketConnection = (name) => {
         socketRef.current = io('http://localhost:3001', {
             query: { roomId, userId, userName: name }
@@ -186,7 +229,6 @@ export default function VideoRoom({ roomId, userId }) {
 
             setUsers(prevUsers => {
                 const filteredUsers = newUsers.filter(u => u.userId !== userId);
-
                 const updatedUsers = filteredUsers.map(newUser => {
                     const existingUser = prevUsers.find(u => u.socketId === newUser.socketId);
                     return {
@@ -194,43 +236,43 @@ export default function VideoRoom({ roomId, userId }) {
                         stream: existingUser?.stream || null
                     };
                 });
-
                 return updatedUsers;
             });
 
             const filteredUsers = newUsers.filter(u => u.userId !== userId);
             filteredUsers.forEach(user => {
                 if (!peersRef.current[user.socketId]) {
-                    const peer = createPeer(user.socketId, true);
-                    peersRef.current[user.socketId] = peer;
-
-                    peer.createOffer()
-                        .then(offer => peer.setLocalDescription(offer))
-                        .then(() => {
-                            socketRef.current.emit('offer', {
-                                offer: peer.localDescription,
-                                to: user.socketId
-                            });
-                        })
-                        .catch(err => {
-                            console.error('Error in offer creation:', err);
-                            updateDebugInfo({ offerError: err.message });
-                        });
+                    peersRef.current[user.socketId] = createPeer(user.socketId, true);
                 }
             });
         });
 
         socketRef.current.on('offer', async ({ offer, from }) => {
             try {
-                const peer = createPeer(from, false);
+                const peer = peersRef.current[from] || createPeer(from, false);
                 peersRef.current[from] = peer;
 
+                const readyForOffer =
+                    !makingOfferRef.current &&
+                    (peer.signalingState === "stable" || isSettingRemoteAnswerRef.current);
+
+                const offerCollision = !readyForOffer;
+                const ignoreOffer = offerCollision && socketRef.current.id < from;
+
+                if (ignoreOffer) {
+                    console.log('Ignoring colliding offer');
+                    return;
+                }
+
+                isSettingRemoteAnswerRef.current = true;
                 await peer.setRemoteDescription(new RTCSessionDescription(offer));
+                isSettingRemoteAnswerRef.current = false;
+
                 const answer = await peer.createAnswer();
                 await peer.setLocalDescription(answer);
 
                 socketRef.current.emit('answer', {
-                    answer: answer,
+                    answer: peer.localDescription,
                     to: from
                 });
             } catch (err) {
@@ -242,19 +284,25 @@ export default function VideoRoom({ roomId, userId }) {
         socketRef.current.on('answer', async ({ answer, from }) => {
             try {
                 const peer = peersRef.current[from];
-                if (peer) {
+                if (!peer) {
+                    console.warn('No peer connection found for answer');
+                    return;
+                }
+
+                if (peer.signalingState === "have-local-offer") {
                     await peer.setRemoteDescription(new RTCSessionDescription(answer));
+                } else {
+                    console.warn('Unexpected signaling state for answer:', peer.signalingState);
                 }
             } catch (err) {
                 console.error('Error handling answer:', err);
                 updateDebugInfo({ answerHandlingError: err.message });
             }
         });
-
         socketRef.current.on('ice-candidate', async ({ candidate, from }) => {
             try {
                 const peer = peersRef.current[from];
-                if (peer) {
+                if (peer && peer.remoteDescription && peer.remoteDescription.type) {
                     await peer.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             } catch (err) {
@@ -264,9 +312,8 @@ export default function VideoRoom({ roomId, userId }) {
         });
 
         socketRef.current.on('user-disconnected', (disconnectedUserId) => {
-            setUsers(prevUsers =>
-                prevUsers.filter(user => user.userId !== disconnectedUserId)
-            );
+            console.log('User disconnected:', disconnectedUserId);
+            setUsers(prevUsers => prevUsers.filter(user => user.userId !== disconnectedUserId));
 
             Object.entries(peersRef.current).forEach(([socketId, peer]) => {
                 if (users.find(u => u.socketId === socketId && u.userId === disconnectedUserId)) {
@@ -279,7 +326,7 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
-    // 初期化とクリーンアップ
+    // useEffect for initialization
     useEffect(() => {
         let mounted = true;
 
@@ -304,7 +351,9 @@ export default function VideoRoom({ roomId, userId }) {
                     return;
                 }
 
+                console.log('Local stream obtained:', stream);
                 localStreamRef.current = stream;
+
                 setIsConnecting(false);
                 userNameFetchedRef.current = true;
 
@@ -328,13 +377,15 @@ export default function VideoRoom({ roomId, userId }) {
                 }
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
-            if (socketRef.current) {
-                socketRef.current.disconnect();
-            }
+
             Object.values(peersRef.current).forEach(peer => {
                 peer.close();
             });
             peersRef.current = {};
+
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+            }
         };
     }, [roomId, userId]);
 
@@ -347,7 +398,6 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
-    // エラー表示
     if (deviceError) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -375,7 +425,6 @@ export default function VideoRoom({ roomId, userId }) {
         );
     }
 
-    // 接続中表示
     if (isConnecting) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -389,7 +438,6 @@ export default function VideoRoom({ roomId, userId }) {
         );
     }
 
-    // メインのビデオチャットUI
     return (
         <div
             className="min-h-screen p-4"
@@ -399,7 +447,6 @@ export default function VideoRoom({ roomId, userId }) {
                 backgroundPosition: 'center'
             }}
         >
-            {/* 招待ボタン */}
             <div className="fixed top-4 right-4 z-10">
                 <button
                     onClick={copyInviteLink}
@@ -418,22 +465,26 @@ export default function VideoRoom({ roomId, userId }) {
                 </button>
             </div>
 
-            {/* 参加者数表示 */}
             <div className="fixed top-4 left-4 z-10 bg-black/50 text-white px-4 py-2 rounded-lg">
                 参加者: {users.length + 1}人
             </div>
 
-            {/* 背景選択コンポーネント */}
             <BackgroundSelector onSelect={setBackground} />
 
-            {/* ビデオグリッド */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-16">
-                {/* 自分のビデオ */}
                 <div className="relative aspect-video bg-gray-200 rounded-lg overflow-hidden shadow-lg">
                     <video
                         ref={ref => {
                             if (ref) {
                                 ref.srcObject = localStreamRef.current;
+                                console.log('Local video element updated:', {
+                                    hasStream: !!localStreamRef.current,
+                                    streamTracks: localStreamRef.current?.getTracks().map(t => ({
+                                        kind: t.kind,
+                                        enabled: t.enabled,
+                                        muted: t.muted
+                                    }))
+                                });
                             }
                         }}
                         autoPlay
@@ -446,13 +497,21 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
                 </div>
 
-                {/* 他の参加者のビデオ */}
                 {users.map(user => (
                     <div key={user.socketId} className="relative aspect-video bg-gray-200 rounded-lg overflow-hidden shadow-lg">
                         <video
                             ref={ref => {
                                 if (ref && user.stream) {
                                     ref.srcObject = user.stream;
+                                    console.log('Remote video element updated:', {
+                                        userId: user.userId,
+                                        hasStream: !!user.stream,
+                                        streamTracks: user.stream?.getTracks().map(t => ({
+                                            kind: t.kind,
+                                            enabled: t.enabled,
+                                            muted: t.muted
+                                        }))
+                                    });
                                 }
                             }}
                             autoPlay
@@ -466,7 +525,6 @@ export default function VideoRoom({ roomId, userId }) {
                 ))}
             </div>
 
-            {/* 説明メッセージ */}
             {users.length === 0 && (
                 <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white/90 px-6 py-3 rounded-lg shadow-lg">
                     <p className="text-center text-gray-800">
@@ -475,7 +533,6 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
             )}
 
-            {/* デバッグ情報表示 */}
             {process.env.NODE_ENV === 'development' && (
                 <div className="fixed bottom-4 right-4 bg-black/50 text-white text-xs p-2 rounded-lg">
                     <div>Room ID: {roomId}</div>
