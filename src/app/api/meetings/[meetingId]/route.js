@@ -1,9 +1,9 @@
 import prisma from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-export async function PUT(req, { params }) {
+export async function PUT(req, context) {
     try {
-        const { meetingId } = params;
+        const { meetingId } = context.params; // awaitは不要です
         const { endTime } = await req.json();
 
         console.log(`Updating meeting ${meetingId} with endTime:`, endTime);

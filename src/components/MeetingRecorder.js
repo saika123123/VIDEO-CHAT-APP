@@ -1,27 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 
-const MeetingRecorder = ({
-    roomId,
-    userId,
-    userName,
-    isAudioOn
-}) => {
+const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
     const recognitionRef = useRef(null);
     const [error, setError] = useState(null);
 
-    // meetingId の変更を監視
+    // ミーティングIDの状態を追跡する新しいRef
+    const activeMeetingIdRef = useRef(null);
+
+    // meetingIdが変更されたらRefも更新
     useEffect(() => {
-        console.log('Current meetingId:', meetingId);
+        activeMeetingIdRef.current = meetingId;
+        console.log('Active meeting ID updated:', meetingId);
     }, [meetingId]);
 
     const startRecording = async () => {
         try {
             console.log('Starting recording for room:', roomId);
-
-            // 既存のミーティングIDをクリア
             setMeetingId(null);
             setTranscript([]);
 
@@ -31,56 +28,47 @@ const MeetingRecorder = ({
                 body: JSON.stringify({ roomId })
             });
 
-            const responseText = await response.text();
-            console.log('Raw response:', responseText);
-
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                throw new Error(`Invalid JSON response: ${responseText}`);
-            }
+            const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(`Failed to start meeting: ${data.error || 'Unknown error'}`);
+                throw new Error(data.error || 'Failed to start meeting');
             }
 
             console.log('Meeting created:', data);
 
-            if (!data.meetingId) {
-                throw new Error('No meeting ID received');
-            }
-
-            // ミーティングID設定前に音声認識を開始しない
+            // ミーティングIDを両方の場所で設定
             setMeetingId(data.meetingId);
-            await new Promise(resolve => setTimeout(resolve, 100)); // State更新を待つ
+            activeMeetingIdRef.current = data.meetingId;
+
+            // 音声認識の開始前に少し待つ
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             if (recognitionRef.current) {
                 recognitionRef.current.start();
                 setIsRecording(true);
                 setError(null);
-            } else {
-                throw new Error('Speech recognition not initialized');
             }
         } catch (error) {
             console.error('Failed to start recording:', error);
             setError(`録音の開始に失敗しました: ${error.message}`);
             setIsRecording(false);
             setMeetingId(null);
+            activeMeetingIdRef.current = null;
         }
     };
 
     const stopRecording = async () => {
         try {
-            console.log('Stopping recording for meeting:', meetingId);
+            const currentMeetingId = activeMeetingIdRef.current;
+            console.log('Stopping recording for meeting:', currentMeetingId);
 
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
             }
             setIsRecording(false);
 
-            if (meetingId) {
-                const response = await fetch(`/api/meetings/${meetingId}`, {
+            if (currentMeetingId) {
+                const response = await fetch(`/api/meetings/${currentMeetingId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -88,86 +76,18 @@ const MeetingRecorder = ({
                     })
                 });
 
-                const responseText = await response.text();
-                console.log('Raw stop response:', responseText);
-
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (e) {
-                    throw new Error(`Invalid JSON response: ${responseText}`);
-                }
-
                 if (!response.ok) {
-                    throw new Error(`Failed to end meeting: ${data.error || 'Unknown error'}`);
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to end meeting');
                 }
-
-                console.log('Meeting ended:', data);
             }
 
             setMeetingId(null);
+            activeMeetingIdRef.current = null;
             setError(null);
         } catch (error) {
             console.error('Failed to stop recording:', error);
             setError(`録音の停止に失敗しました: ${error.message}`);
-        }
-    };
-
-    const saveSpeech = async (content) => {
-        console.log('Attempting to save speech with meeting ID:', meetingId);
-
-        if (!meetingId) {
-            console.error('No active meeting ID');
-            setError('アクティブな会議がありません。録音を開始してください。');
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
-            setIsRecording(false);
-            return;
-        }
-
-        try {
-            const speechData = {
-                meetingId,
-                userId,
-                content: content.trim()
-            };
-
-            console.log('Saving speech:', speechData);
-
-            const response = await fetch('/api/speeches', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(speechData)
-            });
-
-            const responseText = await response.text();
-            console.log('Raw speech response:', responseText);
-
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                throw new Error(`Invalid JSON response: ${responseText}`);
-            }
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}, ${data.error || 'Unknown error'}`);
-            }
-
-            console.log('Speech saved:', data);
-
-            setTranscript(prev => [...prev, {
-                id: data.id,
-                userName,
-                content,
-                timestamp: new Date()
-            }]);
-
-            setError(null);
-        } catch (error) {
-            console.error('Failed to save speech:', error);
-            setError(`音声の保存に失敗しました: ${error.message}`);
         }
     };
 
@@ -179,14 +99,18 @@ const MeetingRecorder = ({
         }
 
         const SpeechRecognition = window.webkitSpeechRecognition;
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = true;
-        recognitionRef.current.lang = 'ja-JP';
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'ja-JP';
 
-        recognitionRef.current.onresult = (event) => {
-            if (!meetingId || !isRecording) {
-                console.log('Ignoring speech result - no active meeting or not recording');
+        recognition.onresult = (event) => {
+            const currentMeetingId = activeMeetingIdRef.current;
+            if (!currentMeetingId || !isRecording) {
+                console.log('Ignoring speech result - no active meeting or not recording', {
+                    currentMeetingId,
+                    isRecording
+                });
                 return;
             }
 
@@ -194,23 +118,70 @@ const MeetingRecorder = ({
                 const result = event.results[i];
                 if (result.isFinal && result[0].transcript.trim().length > 0) {
                     console.log('Final transcript:', result[0].transcript);
-                    saveSpeech(result[0].transcript);
+                    saveSpeech(result[0].transcript, currentMeetingId);
                 }
             }
         };
 
-        recognitionRef.current.onerror = (event) => {
+        recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
             setError(`音声認識エラー: ${event.error}`);
-            setIsRecording(false);
+            if (isRecording) {
+                stopRecording();
+            }
         };
+
+        recognition.onend = () => {
+            console.log('Speech recognition ended');
+            if (isRecording) {
+                recognition.start();
+            }
+        };
+
+        recognitionRef.current = recognition;
 
         return () => {
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
             }
         };
-    }, [meetingId, isRecording]);
+    }, [isRecording]); // isRecordingを依存配列に追加
+
+    const saveSpeech = async (content, currentMeetingId) => {
+        if (!currentMeetingId) {
+            console.error('No active meeting ID for speech saving');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/speeches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    meetingId: currentMeetingId,
+                    userId,
+                    content: content.trim()
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to save speech');
+            }
+
+            const data = await response.json();
+            setTranscript(prev => [...prev, {
+                id: data.id,
+                userName,
+                content,
+                timestamp: new Date()
+            }]);
+
+        } catch (error) {
+            console.error('Failed to save speech:', error);
+            setError(`音声の保存に失敗しました: ${error.message}`);
+        }
+    };
 
     // コンポーネントのクリーンアップ
     useEffect(() => {
@@ -219,7 +190,7 @@ const MeetingRecorder = ({
                 stopRecording();
             }
         };
-    }, [isRecording]);
+    }, []);
 
     return (
         <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
@@ -229,8 +200,8 @@ const MeetingRecorder = ({
                     onClick={isRecording ? stopRecording : startRecording}
                     disabled={!isAudioOn || error}
                     className={`px-4 py-2 rounded-lg ${isRecording
-                            ? 'bg-red-600 text-white'
-                            : 'bg-blue-600 text-white'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-blue-600 text-white'
                         } disabled:opacity-50`}
                 >
                     {isRecording ? '録音停止' : '録音開始'}
