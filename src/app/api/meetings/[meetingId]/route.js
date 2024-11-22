@@ -1,12 +1,11 @@
 import prisma from '@/lib/db';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-export async function PUT(
-    request: NextRequest,
-    { params }: { params: { meetingId: string } }
-) {
+export async function PUT(request, context) {
+    const params = await Promise.resolve(context.params);
+
     try {
-        const meetingId = params.meetingId;
+        const { meetingId } = params;
         const { endTime } = await request.json();
 
         console.log(`Updating meeting ${meetingId} with endTime:`, endTime);
@@ -54,12 +53,11 @@ export async function PUT(
     }
 }
 
-export async function GET(
-    request: NextRequest,
-    { params }: { params: { meetingId: string } }
-) {
+export async function GET(request, context) {
+    const params = await Promise.resolve(context.params);
+
     try {
-        const meetingId = params.meetingId;
+        const { meetingId } = params;
 
         const meeting = await prisma.meeting.findUnique({
             where: { id: meetingId },
