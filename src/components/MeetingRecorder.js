@@ -11,180 +11,150 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const isInitializedRef = useRef(false);
     const processingRef = useRef(false);
     const retryCountRef = useRef(0);
+    const pendingSpeechesRef = useRef([]);
     const maxRetries = 3;
     const retryDelay = 1000;
 
-    const logStatus = useCallback(() => {
-        console.log('Status Check:', {
-            isRecording,
-            meetingId,
-            activeMeetingId: activeMeetingIdRef.current,
-            hasRecognition: !!recognitionRef.current,
-            isInitialized: isInitializedRef.current
-        });
-    }, [isRecording, meetingId]);
+    const saveSpeechToQueue = useCallback((content) => {
+        if (!content.trim()) return;
 
-    const saveSpeech = useCallback(async (content, currentMeetingId) => {
-        console.log('★saveSpeech called:', {
-            content,
-            currentMeetingId,
-            isProcessing: processingRef.current
+        pendingSpeechesRef.current.push({
+            content: content.trim(),
+            timestamp: new Date(),
+            retryCount: 0
         });
+    }, []);
 
-        if (processingRef.current || !content.trim() || !currentMeetingId) {
-            console.log('★Speech save skipped due to conditions');
+    const processSpeechQueue = useCallback(async () => {
+        if (processingRef.current || !activeMeetingIdRef.current || pendingSpeechesRef.current.length === 0) {
             return;
         }
 
         processingRef.current = true;
+        const speech = pendingSpeechesRef.current[0];
+
         try {
-            console.log('★Sending POST request to /api/speeches');
             const response = await fetch('/api/speeches', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    meetingId: currentMeetingId,
+                    meetingId: activeMeetingIdRef.current,
                     userId,
-                    content: content.trim()
+                    content: speech.content
                 })
             });
 
-            console.log('★Response received:', {
-                status: response.status,
-                ok: response.ok
-            });
-
-            const responseText = await response.text();
-            console.log('★Raw response:', responseText);
-
-            let responseData;
-            try {
-                responseData = JSON.parse(responseText);
-                console.log('★Parsed response data:', responseData);
-            } catch (parseError) {
-                console.error('★Failed to parse response:', parseError);
-                throw new Error('Invalid response format');
-            }
-
             if (!response.ok) {
-                throw new Error(responseData.error || '音声の保存に失敗しました');
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+
+            const data = await response.json();
 
             setTranscript(prev => [...prev, {
-                id: responseData.id,
+                id: data.id,
                 userName,
-                content,
-                timestamp: new Date()
+                content: speech.content,
+                timestamp: speech.timestamp
             }]);
 
+            // 成功したら配列から削除
+            pendingSpeechesRef.current.shift();
+
         } catch (error) {
-            console.error('★Failed to save speech:', error);
-            setError(`音声の保存に失敗しました: ${error.message}`);
+            console.error('Failed to save speech:', error);
+            speech.retryCount++;
+
+            if (speech.retryCount >= 3) {
+                pendingSpeechesRef.current.shift();
+                setError(`Failed to save speech after ${maxRetries} attempts`);
+            }
         } finally {
             processingRef.current = false;
+
+            // キューに残りがあれば再度処理
+            if (pendingSpeechesRef.current.length > 0) {
+                setTimeout(() => processSpeechQueue(), 1000);
+            }
         }
     }, [userId, userName]);
 
-    const handleRecognitionError = useCallback((event) => {
-        console.log('Speech recognition error:', event.error);
-
-        if (event.error === 'no-speech') {
-            if (retryCountRef.current < maxRetries) {
-                retryCountRef.current++;
-                console.log(`Retrying... Attempt ${retryCountRef.current} of ${maxRetries}`);
-
-                setTimeout(() => {
-                    if (recognitionRef.current && isRecording && activeMeetingIdRef.current) {
-                        try {
-                            recognitionRef.current.stop();
-                            setTimeout(() => {
-                                recognitionRef.current.start();
-                                setError(null);
-                            }, 100);
-                        } catch (error) {
-                            console.error('Error restarting recognition:', error);
-                        }
-                    }
-                }, retryDelay);
-
-                setError('音声を検出中です...');
-            } else {
-                setError('音声を検出できません。マイクの設定を確認してください。');
-                retryCountRef.current = 0;
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (pendingSpeechesRef.current.length > 0) {
+                processSpeechQueue();
             }
-        } else if (event.error === 'audio-capture') {
-            setError('マイクが見つかりません。設定を確認してください。');
-        } else {
-            setError(`音声認識エラー: ${event.error}`);
+        }, 2000);
+
+        return () => clearInterval(interval);
+    }, [processSpeechQueue]);
+
+    const handleSpeechResult = useCallback((event) => {
+        if (!isRecording || !activeMeetingIdRef.current) return;
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+                const transcript = result[0].transcript.trim();
+                if (transcript) {
+                    saveSpeechToQueue(transcript);
+                }
+            }
         }
-    }, [isRecording]);
+    }, [isRecording, saveSpeechToQueue]);
 
     const initializeSpeechRecognition = useCallback(() => {
         if (!('webkitSpeechRecognition' in window)) {
-            setError('お使いのブラウザは音声認識をサポートしていません');
+            setError('This browser does not support speech recognition');
             return null;
         }
 
-        try {
-            const SpeechRecognition = window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'ja-JP';
+        const recognition = new window.webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'ja-JP';
 
-            recognition.onstart = () => {
-                console.log('Speech recognition started');
-                retryCountRef.current = 0;
-                setError(null);
-            };
+        recognition.onstart = () => {
+            console.log('Speech recognition started');
+            retryCountRef.current = 0;
+            setError(null);
+        };
 
-            recognition.onend = () => {
-                console.log('Speech recognition ended');
-                if (isRecording && activeMeetingIdRef.current) {
-                    setTimeout(() => {
-                        try {
-                            recognition.start();
-                        } catch (error) {
-                            console.error('Failed to restart recognition:', error);
-                        }
-                    }, 100);
+        recognition.onend = () => {
+            console.log('Speech recognition ended');
+            if (isRecording && activeMeetingIdRef.current) {
+                try {
+                    recognition.start();
+                } catch (error) {
+                    console.error('Failed to restart recognition:', error);
+                    setError('Failed to restart speech recognition');
                 }
-            };
+            }
+        };
 
-            recognition.onerror = handleRecognitionError;
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            setError(`Speech recognition error: ${event.error}`);
 
-            recognition.onresult = async (event) => {
-                if (!isRecording || !activeMeetingIdRef.current) return;
-
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const result = event.results[i];
-                    if (result.isFinal) {
-                        const transcript = result[0].transcript.trim();
-                        if (transcript) {
-                            await saveSpeech(transcript, activeMeetingIdRef.current);
-                        }
+            if (event.error === 'no-speech' && retryCountRef.current < maxRetries) {
+                retryCountRef.current++;
+                setTimeout(() => {
+                    try {
+                        recognition.stop();
+                        recognition.start();
+                    } catch (error) {
+                        console.error('Error restarting recognition:', error);
                     }
-                }
-            };
+                }, retryDelay);
+            }
+        };
 
-            return recognition;
-        } catch (error) {
-            console.error('Failed to initialize speech recognition:', error);
-            setError('音声認識の初期化に失敗しました');
-            return null;
-        }
-    }, [isRecording, handleRecognitionError, saveSpeech]);
+        recognition.onresult = handleSpeechResult;
+
+        return recognition;
+    }, [isRecording, handleSpeechResult]);
 
     const startRecording = async () => {
         try {
-            setError(null);
-            console.log('Starting recording process');
-            setIsRecording(true);
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log('★Microphone check passed:', stream.getAudioTracks()[0].enabled);
-            stream.getTracks().forEach(track => track.stop());
-
             const response = await fetch('/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -192,159 +162,85 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'ミーティングの作成に失敗しました');
+                throw new Error('Failed to create meeting');
             }
 
             const data = await response.json();
-            console.log('Meeting created successfully:', data);
-
-            if (recognitionRef.current) {
-                try {
-                    recognitionRef.current.stop();
-                } catch (error) {
-                    console.error('Error stopping existing recognition:', error);
-                }
-            }
-
             setMeetingId(data.meetingId);
             activeMeetingIdRef.current = data.meetingId;
 
-            recognitionRef.current = initializeSpeechRecognition();
-
-            if (recognitionRef.current) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-                try {
-                    recognitionRef.current.start();
-                    console.log('Speech recognition started after meeting creation');
-                } catch (error) {
-                    throw new Error('音声認識の開始に失敗しました: ' + error.message);
-                }
-            } else {
-                throw new Error('音声認識の初期化に失敗しました');
+            const recognition = initializeSpeechRecognition();
+            if (!recognition) {
+                throw new Error('Failed to initialize speech recognition');
             }
 
-            logStatus();
+            recognitionRef.current = recognition;
+            recognition.start();
+            setIsRecording(true);
+            setError(null);
+
         } catch (error) {
             console.error('Failed to start recording:', error);
+            setError(`Failed to start recording: ${error.message}`);
             setIsRecording(false);
             setMeetingId(null);
             activeMeetingIdRef.current = null;
-            setError(`録音の開始に失敗しました: ${error.message}`);
-            logStatus();
         }
     };
 
     const stopRecording = async () => {
-        let apiError = false;
+        if (!activeMeetingIdRef.current) return;
+
         try {
-            setIsRecording(false);
-
-            const currentMeetingId = activeMeetingIdRef.current;
-            console.log('Stopping recording for meeting:', currentMeetingId);
-
             if (recognitionRef.current) {
-                try {
-                    recognitionRef.current.stop();
-                } catch (error) {
-                    console.warn('Error stopping recognition:', error);
-                }
+                recognitionRef.current.stop();
             }
 
-            if (currentMeetingId) {
-                try {
-                    const response = await fetch(`/api/meetings/${currentMeetingId}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            endTime: new Date().toISOString()
-                        }),
-                        cache: 'no-store'
-                    });
+            const response = await fetch(`/api/meetings/${activeMeetingIdRef.current}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endTime: new Date().toISOString()
+                })
+            });
 
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        let errorMessage;
-                        try {
-                            const errorData = JSON.parse(errorText);
-                            errorMessage = errorData.error || 'Unknown error';
-                        } catch (e) {
-                            errorMessage = errorText || `HTTP error! status: ${response.status}`;
-                        }
-                        throw new Error(errorMessage);
-                    }
+            if (!response.ok) {
+                throw new Error('Failed to end meeting');
+            }
 
-                    const text = await response.text();
-                    if (!text) {
-                        throw new Error('Empty response received');
-                    }
-
-                    const data = JSON.parse(text);
-                    if (!data.success) {
-                        throw new Error(data.error || 'Failed to end meeting');
-                    }
-
-                    console.log('Meeting ended successfully:', data);
-
-                } catch (error) {
-                    apiError = true;
-                    throw new Error(`ミーティングの終了に失敗しました: ${error.message}`);
-                }
+            // Process any remaining speeches in queue
+            while (pendingSpeechesRef.current.length > 0) {
+                await processSpeechQueue();
             }
 
         } catch (error) {
             console.error('Failed to stop recording:', error);
-            setError(`録音の停止に失敗しました: ${error.message}`);
+            setError(`Failed to stop recording: ${error.message}`);
         } finally {
-            if (!apiError) {
-                setMeetingId(null);
-                activeMeetingIdRef.current = null;
-                setTranscript([]);
-            }
-
-            if (recognitionRef.current) {
-                try {
-                    recognitionRef.current.stop();
-                } catch (e) {
-                    console.warn('Error in final recognition stop:', e);
-                }
-                recognitionRef.current = null;
-            }
+            setIsRecording(false);
+            setMeetingId(null);
+            activeMeetingIdRef.current = null;
+            recognitionRef.current = null;
+            setTranscript([]);
         }
     };
 
     useEffect(() => {
-        if (!isInitializedRef.current) {
-            console.log('Initializing MeetingRecorder');
-            isInitializedRef.current = true;
-            logStatus();
-        }
-
         return () => {
-            console.log('Cleaning up MeetingRecorder');
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
             }
             if (isRecording) {
                 stopRecording();
             }
-            logStatus();
         };
     }, []);
 
     useEffect(() => {
         if (!isAudioOn && isRecording) {
-            console.log('Audio turned off while recording, stopping...');
             stopRecording();
         }
     }, [isAudioOn, isRecording]);
-
-    useEffect(() => {
-        console.log('Recording state changed:', isRecording);
-    }, [isRecording]);
 
     return (
         <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
