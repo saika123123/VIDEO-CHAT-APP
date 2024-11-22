@@ -2,60 +2,34 @@ import prisma from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
+    console.log('★POST /api/speeches received');
     try {
         const body = await req.json();
+        console.log('★Request body:', body);
+
         const { meetingId, userId, content } = body;
 
-        // 入力値の検証
-        if (!meetingId || !userId || !content) {
-            console.error('Missing required fields:', { meetingId, userId, content });
-            return NextResponse.json(
-                { error: 'Missing required fields' },
-                { status: 400 }
-            );
-        }
+        // バリデーションのログ
+        console.log('★Validation check:', {
+            hasMeetingId: !!meetingId,
+            hasUserId: !!userId,
+            hasContent: !!content
+        });
 
-        // 会議の存在とアクティブ状態の確認
+        // 会議の存在確認
         const meeting = await prisma.meeting.findUnique({
             where: { id: meetingId }
         });
-
-        if (!meeting) {
-            console.error('Meeting not found:', meetingId);
-            return NextResponse.json(
-                { error: 'Meeting not found' },
-                { status: 404 }
-            );
-        }
-
-        if (!meeting.isActive) {
-            console.error('Meeting is not active:', meetingId);
-            return NextResponse.json(
-                { error: 'Meeting is not active' },
-                { status: 400 }
-            );
-        }
+        console.log('★Meeting found:', meeting);
 
         // ユーザーの存在確認
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
+        console.log('★User found:', user);
 
-        if (!user) {
-            console.error('User not found:', userId);
-            return NextResponse.json(
-                { error: 'User not found' },
-                { status: 404 }
-            );
-        }
-
-        console.log('Creating speech record:', {
-            meetingId,
-            userId,
-            contentLength: content.length
-        });
-
-        // 発言の保存
+        // Speech作成の試行
+        console.log('★Attempting to create speech record');
         const speech = await prisma.speech.create({
             data: {
                 meetingId,
@@ -63,8 +37,7 @@ export async function POST(req) {
                 content: content.trim()
             }
         });
-
-        console.log('Created speech record:', speech);
+        console.log('★Speech created:', speech);
 
         return NextResponse.json({
             id: speech.id,
@@ -74,12 +47,9 @@ export async function POST(req) {
         });
 
     } catch (error) {
-        console.error('Failed to save speech:', error);
+        console.error('★Error in POST /api/speeches:', error);
         return NextResponse.json(
-            {
-                error: 'Failed to save speech',
-                details: error.message
-            },
+            { error: 'Failed to save speech', details: error.message },
             { status: 500 }
         );
     }

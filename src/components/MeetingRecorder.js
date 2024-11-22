@@ -22,14 +22,20 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     }, [isRecording, meetingId]);
 
     const saveSpeech = useCallback(async (content, currentMeetingId) => {
+        console.log('★saveSpeech called:', {
+            content,
+            currentMeetingId,
+            isProcessing: processingRef.current
+        });
+
         if (processingRef.current || !content.trim() || !currentMeetingId) {
-            console.log('Speech save skipped:', { content: content.trim(), currentMeetingId, isProcessing: processingRef.current });
+            console.log('★Speech save skipped due to conditions');
             return;
         }
 
         processingRef.current = true;
         try {
-            console.log('Saving speech:', { content, meetingId: currentMeetingId });
+            console.log('★Sending POST request to /api/speeches');
             const response = await fetch('/api/speeches', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -40,20 +46,38 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 })
             });
 
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || '音声の保存に失敗しました');
+            console.log('★Response received:', {
+                status: response.status,
+                ok: response.ok
+            });
+
+            // responseTextとしてテキストを先に取得
+            const responseText = await response.text();
+            console.log('★Raw response:', responseText);
+
+            let responseData;
+            try {
+                responseData = JSON.parse(responseText);
+                console.log('★Parsed response data:', responseData);
+            } catch (parseError) {
+                console.error('★Failed to parse response:', parseError);
+                throw new Error('Invalid response format');
             }
 
-            console.log('Speech saved successfully:', data);
+            if (!response.ok) {
+                throw new Error(responseData.error || '音声の保存に失敗しました');
+            }
+
+            console.log('★Speech saved successfully:', responseData);
             setTranscript(prev => [...prev, {
-                id: data.id,
+                id: responseData.id,
                 userName,
                 content,
                 timestamp: new Date()
             }]);
+
         } catch (error) {
-            console.error('Failed to save speech:', error);
+            console.error('★Failed to save speech:', error);
             setError(`音声の保存に失敗しました: ${error.message}`);
         } finally {
             processingRef.current = false;
@@ -73,10 +97,12 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             recognition.interimResults = false; // 最終結果のみを取得
             recognition.lang = 'ja-JP';
 
+            // 音声認識の開始時
             recognition.onstart = () => {
-                console.log('Speech recognition started');
-                setIsRecording(true);
-                setError(null);
+                console.log('★Speech recognition started', {
+                    meetingId: activeMeetingIdRef.current,
+                    isRecording
+                });
             };
 
             recognition.onend = () => {
@@ -120,14 +146,22 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 }
             };
 
+            // 音声認識の結果取得時
             recognition.onresult = async (event) => {
-                if (!isRecording || !activeMeetingIdRef.current) return;
+                console.log('★Speech recognition result received');
+                if (!isRecording || !activeMeetingIdRef.current) {
+                    console.log('★Speech skipped - not recording or no meeting', {
+                        isRecording,
+                        meetingId: activeMeetingIdRef.current
+                    });
+                    return;
+                }
 
                 const lastResult = event.results[event.results.length - 1];
                 if (lastResult.isFinal) {
                     const transcript = lastResult[0].transcript.trim();
+                    console.log('★Final transcript:', transcript);
                     if (transcript) {
-                        console.log('Processing final transcript:', transcript);
                         await saveSpeech(transcript, activeMeetingIdRef.current);
                     }
                 }
@@ -145,6 +179,11 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         try {
             setError(null);
             console.log('Starting recording process');
+
+            // マイクの動作確認を追加
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('★Microphone check passed:', stream.getAudioTracks()[0].enabled);
+        stream.getTracks().forEach(track => track.stop()); // チェック用のストリームを停止
 
             const response = await fetch('/api/meetings', {
                 method: 'POST',
