@@ -1,13 +1,29 @@
 import prisma from '@/lib/db';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function PUT(req, context) {
+export async function PUT(
+    request: NextRequest,
+    { params }: { params: { meetingId: string } }
+) {
     try {
-        const { meetingId } = context.params; // awaitは不要です
-        const { endTime } = await req.json();
+        const meetingId = params.meetingId;
+        const { endTime } = await request.json();
 
         console.log(`Updating meeting ${meetingId} with endTime:`, endTime);
 
+        // ミーティングの存在確認
+        const existingMeeting = await prisma.meeting.findUnique({
+            where: { id: meetingId }
+        });
+
+        if (!existingMeeting) {
+            return NextResponse.json(
+                { error: 'Meeting not found' },
+                { status: 404 }
+            );
+        }
+
+        // ミーティングの更新
         const meeting = await prisma.meeting.update({
             where: {
                 id: meetingId
@@ -31,7 +47,49 @@ export async function PUT(req, context) {
         return NextResponse.json(
             {
                 error: 'Failed to update meeting',
-                details: error.message
+                details: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+        );
+    }
+}
+
+export async function GET(
+    request: NextRequest,
+    { params }: { params: { meetingId: string } }
+) {
+    try {
+        const meetingId = params.meetingId;
+
+        const meeting = await prisma.meeting.findUnique({
+            where: { id: meetingId },
+            include: {
+                speeches: {
+                    include: {
+                        user: true
+                    },
+                    orderBy: {
+                        timestamp: 'asc'
+                    }
+                }
+            }
+        });
+
+        if (!meeting) {
+            return NextResponse.json(
+                { error: 'Meeting not found' },
+                { status: 404 }
+            );
+        }
+
+        return NextResponse.json(meeting);
+
+    } catch (error) {
+        console.error('Failed to fetch meeting:', error);
+        return NextResponse.json(
+            {
+                error: 'Failed to fetch meeting',
+                details: error instanceof Error ? error.message : 'Unknown error'
             },
             { status: 500 }
         );
