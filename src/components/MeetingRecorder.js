@@ -1,3 +1,4 @@
+'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
@@ -9,8 +10,10 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const activeMeetingIdRef = useRef(null);
     const isInitializedRef = useRef(false);
     const processingRef = useRef(false);
+    const retryCountRef = useRef(0);
+    const maxRetries = 3;
+    const retryDelay = 1000;
 
-    // ステータスログ用の関数
     const logStatus = useCallback(() => {
         console.log('Status Check:', {
             isRecording,
@@ -51,7 +54,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 ok: response.ok
             });
 
-            // responseTextとしてテキストを先に取得
             const responseText = await response.text();
             console.log('★Raw response:', responseText);
 
@@ -68,7 +70,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 throw new Error(responseData.error || '音声の保存に失敗しました');
             }
 
-            console.log('★Speech saved successfully:', responseData);
             setTranscript(prev => [...prev, {
                 id: responseData.id,
                 userName,
@@ -84,6 +85,40 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         }
     }, [userId, userName]);
 
+    const handleRecognitionError = useCallback((event) => {
+        console.log('Speech recognition error:', event.error);
+
+        if (event.error === 'no-speech') {
+            if (retryCountRef.current < maxRetries) {
+                retryCountRef.current++;
+                console.log(`Retrying... Attempt ${retryCountRef.current} of ${maxRetries}`);
+
+                setTimeout(() => {
+                    if (recognitionRef.current && isRecording && activeMeetingIdRef.current) {
+                        try {
+                            recognitionRef.current.stop();
+                            setTimeout(() => {
+                                recognitionRef.current.start();
+                                setError(null);
+                            }, 100);
+                        } catch (error) {
+                            console.error('Error restarting recognition:', error);
+                        }
+                    }
+                }, retryDelay);
+
+                setError('音声を検出中です...');
+            } else {
+                setError('音声を検出できません。マイクの設定を確認してください。');
+                retryCountRef.current = 0;
+            }
+        } else if (event.error === 'audio-capture') {
+            setError('マイクが見つかりません。設定を確認してください。');
+        } else {
+            setError(`音声認識エラー: ${event.error}`);
+        }
+    }, [isRecording]);
+
     const initializeSpeechRecognition = useCallback(() => {
         if (!('webkitSpeechRecognition' in window)) {
             setError('お使いのブラウザは音声認識をサポートしていません');
@@ -94,75 +129,40 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             const SpeechRecognition = window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = false; // 最終結果のみを取得
+            recognition.interimResults = true;
             recognition.lang = 'ja-JP';
 
-            // 音声認識の開始時
             recognition.onstart = () => {
-                console.log('★Speech recognition started', {
-                    meetingId: activeMeetingIdRef.current,
-                    isRecording
-                });
+                console.log('Speech recognition started');
+                retryCountRef.current = 0;
+                setError(null);
             };
 
             recognition.onend = () => {
                 console.log('Speech recognition ended');
                 if (isRecording && activeMeetingIdRef.current) {
-                    console.log('Restarting speech recognition');
-                    try {
-                        recognition.start();
-                    } catch (error) {
-                        console.error('Failed to restart recognition:', error);
-                        setTimeout(() => {
-                            try {
-                                recognition.start();
-                            } catch (e) {
-                                console.error('Retry failed:', e);
-                                setError('音声認識の再開に失敗しました');
-                            }
-                        }, 1000);
-                    }
-                } else {
-                    setIsRecording(false);
+                    setTimeout(() => {
+                        try {
+                            recognition.start();
+                        } catch (error) {
+                            console.error('Failed to restart recognition:', error);
+                        }
+                    }, 100);
                 }
             };
 
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                if (event.error === 'no-speech' || event.error === 'audio-capture') {
-                    setError('マイクの入力を確認してください');
-                    if (isRecording && activeMeetingIdRef.current) {
-                        setTimeout(() => {
-                            try {
-                                recognition.start();
-                            } catch (error) {
-                                console.error('Error restarting after error:', error);
-                                setError('音声認識の再開に失敗しました');
-                            }
-                        }, 1000);
-                    }
-                } else {
-                    setError(`音声認識エラー: ${event.error}`);
-                }
-            };
+            recognition.onerror = handleRecognitionError;
 
-            // 音声認識の結果取得時
             recognition.onresult = async (event) => {
-                console.log('★Speech recognition result received');
-                if (!isRecording || !activeMeetingIdRef.current) {
-                    console.log('★Speech skipped - not recording or no meeting', {
-                        isRecording,
-                        meetingId: activeMeetingIdRef.current
-                    });
-                    return;
-                }
+                if (!isRecording || !activeMeetingIdRef.current) return;
 
-                const lastResult = event.results[event.results.length - 1];
-                if (lastResult.isFinal) {
-                    const transcript = lastResult[0].transcript.trim();
-                    console.log('★Final transcript:', transcript);
-                    if (transcript) {
-                        await saveSpeech(transcript, activeMeetingIdRef.current);
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const result = event.results[i];
+                    if (result.isFinal) {
+                        const transcript = result[0].transcript.trim();
+                        if (transcript) {
+                            await saveSpeech(transcript, activeMeetingIdRef.current);
+                        }
                     }
                 }
             };
@@ -173,17 +173,17 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             setError('音声認識の初期化に失敗しました');
             return null;
         }
-    }, [isRecording, saveSpeech]);
+    }, [isRecording, handleRecognitionError, saveSpeech]);
 
     const startRecording = async () => {
         try {
             setError(null);
             console.log('Starting recording process');
+            setIsRecording(true);
 
-            // マイクの動作確認を追加
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('★Microphone check passed:', stream.getAudioTracks()[0].enabled);
-        stream.getTracks().forEach(track => track.stop()); // チェック用のストリームを停止
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('★Microphone check passed:', stream.getAudioTracks()[0].enabled);
+            stream.getTracks().forEach(track => track.stop());
 
             const response = await fetch('/api/meetings', {
                 method: 'POST',
@@ -199,7 +199,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             const data = await response.json();
             console.log('Meeting created successfully:', data);
 
-            // 状態を更新する前に既存の認識を停止
             if (recognitionRef.current) {
                 try {
                     recognitionRef.current.stop();
@@ -211,13 +210,16 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             setMeetingId(data.meetingId);
             activeMeetingIdRef.current = data.meetingId;
 
-            // 新しい音声認識インスタンスを作成
             recognitionRef.current = initializeSpeechRecognition();
 
             if (recognitionRef.current) {
                 await new Promise(resolve => setTimeout(resolve, 200));
-                recognitionRef.current.start();
-                console.log('Speech recognition started after meeting creation');
+                try {
+                    recognitionRef.current.start();
+                    console.log('Speech recognition started after meeting creation');
+                } catch (error) {
+                    throw new Error('音声認識の開始に失敗しました: ' + error.message);
+                }
             } else {
                 throw new Error('音声認識の初期化に失敗しました');
             }
@@ -225,10 +227,10 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             logStatus();
         } catch (error) {
             console.error('Failed to start recording:', error);
-            setError(`録音の開始に失敗しました: ${error.message}`);
             setIsRecording(false);
             setMeetingId(null);
             activeMeetingIdRef.current = null;
+            setError(`録音の開始に失敗しました: ${error.message}`);
             logStatus();
         }
     };
@@ -236,10 +238,11 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const stopRecording = async () => {
         let apiError = false;
         try {
+            setIsRecording(false);
+
             const currentMeetingId = activeMeetingIdRef.current;
             console.log('Stopping recording for meeting:', currentMeetingId);
 
-            // 音声認識の停止
             if (recognitionRef.current) {
                 try {
                     recognitionRef.current.stop();
@@ -248,10 +251,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 }
             }
 
-            // ミーティングの終了処理
             if (currentMeetingId) {
-                setIsRecording(false); // 先に録音状態を更新
-
                 try {
                     const response = await fetch(`/api/meetings/${currentMeetingId}`, {
                         method: 'POST',
@@ -299,15 +299,12 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             console.error('Failed to stop recording:', error);
             setError(`録音の停止に失敗しました: ${error.message}`);
         } finally {
-            // APIエラーの場合でも状態をクリーンアップ
             if (!apiError) {
                 setMeetingId(null);
                 activeMeetingIdRef.current = null;
                 setTranscript([]);
             }
 
-            // 確実に録音を停止
-            setIsRecording(false);
             if (recognitionRef.current) {
                 try {
                     recognitionRef.current.stop();
@@ -319,7 +316,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         }
     };
 
-    // 初期化とクリーンアップ
     useEffect(() => {
         if (!isInitializedRef.current) {
             console.log('Initializing MeetingRecorder');
@@ -339,13 +335,16 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         };
     }, []);
 
-    // マイクの状態監視
     useEffect(() => {
         if (!isAudioOn && isRecording) {
             console.log('Audio turned off while recording, stopping...');
             stopRecording();
         }
     }, [isAudioOn, isRecording]);
+
+    useEffect(() => {
+        console.log('Recording state changed:', isRecording);
+    }, [isRecording]);
 
     return (
         <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
@@ -354,9 +353,40 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 <button
                     onClick={isRecording ? stopRecording : startRecording}
                     disabled={!isAudioOn || error}
-                    className={`px-4 py-2 rounded-lg ${isRecording ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    className={`
+                        px-4 py-2 rounded-lg 
+                        transition-all duration-200 ease-in-out
+                        flex items-center gap-2
+                        ${isRecording
+                            ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }
+                        ${(!isAudioOn || error) && 'opacity-50 cursor-not-allowed'}
+                    `}
                 >
+                    {/* 録音状態に応じたアイコン */}
+                    <svg
+                        className={`w-5 h-5 ${isRecording ? 'animate-ping' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                    >
+                        {isRecording ? (
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
+                            />
+                        ) : (
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                        )}
+                    </svg>
                     {isRecording ? '録音停止' : '録音開始'}
                 </button>
             </div>
@@ -364,6 +394,13 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             {error && (
                 <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-sm">
                     {error}
+                </div>
+            )}
+
+            {isRecording && (
+                <div className="mb-4 p-2 bg-green-100 text-green-700 rounded text-sm flex items-center gap-2">
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                    録音中...
                 </div>
             )}
 
