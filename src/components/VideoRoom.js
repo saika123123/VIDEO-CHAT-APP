@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import BackgroundSelector from './BackgroundSelector';
+import MeetingRecorder from './MeetingRecorder';
 
 // WebRTC設定
 const configuration = {
@@ -661,6 +662,13 @@ export default function VideoRoom({ roomId, userId }) {
                     <BackgroundSelector onSelect={setBackground} />
                 </div>
             )}
+            {/* 議事録コンポーネント */}
+            <MeetingRecorder
+                roomId={roomId}
+                userId={userId}
+                userName={userName}
+                isAudioOn={isAudioOn}
+            />
             {/* 招待案内 */}
             {users.length === 0 && (
                 <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-white/90 px-6 py-3 rounded-lg shadow-lg">

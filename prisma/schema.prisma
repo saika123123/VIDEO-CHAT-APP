@@ -8,15 +8,38 @@ datasource db {
 }
 
 model Room {
-  id            String   @id
-  backgroundUrl String?  @default("/backgrounds/default.jpg")
-  createdAt     DateTime @default(now())
+  id            String     @id
+  backgroundUrl String?    @default("/backgrounds/default.jpg")
+  createdAt     DateTime   @default(now())
   users         User[]
+  meetings      Meeting[]
 }
 
 model User {
-  id     String  @id
-  name   String
-  roomId String?
-  room   Room?   @relation(fields: [roomId], references: [id])
+  id         String         @id
+  name       String
+  roomId     String?
+  room       Room?         @relation(fields: [roomId], references: [id])
+  speeches   Speech[]
+}
+
+model Meeting {
+  id        String     @id @default(cuid())
+  roomId    String
+  room      Room       @relation(fields: [roomId], references: [id])
+  startTime DateTime   @default(now())
+  endTime   DateTime?
+  title     String?
+  speeches  Speech[]
+  isActive  Boolean    @default(true)
+}
+
+model Speech {
+  id         String    @id @default(cuid())
+  meetingId  String
+  meeting    Meeting   @relation(fields: [meetingId], references: [id])
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  content    String    @db.Text
+  timestamp  DateTime  @default(now())
 }
