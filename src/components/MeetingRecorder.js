@@ -15,6 +15,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const processingRef = useRef(false);
     const pendingSpeechesRef = useRef([]);
     const isInitializedRef = useRef(false);
+    const isRecordingRef = useRef(false); // isRecordingのref版を追加
 
     // 定数
     const maxRetries = 3;
@@ -127,15 +128,10 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
 
     // 音声認識結果のハンドリング
     const handleSpeechResult = useCallback((event) => {
-        logDebug(`Speech result received - isRecording: ${isRecording}, meetingId: ${meetingIdRef.current}`);
+        logDebug(`Speech result received - isRecording: ${isRecordingRef.current}, meetingId: ${meetingIdRef.current}`);
 
-        if (!isRecording) {
-            logDebug('Not recording, ignoring speech result');
-            return;
-        }
-
-        if (!meetingIdRef.current) {
-            logDebug('No active meeting ID, ignoring speech result');
+        if (!isRecordingRef.current || !meetingIdRef.current) {
+            logDebug('Not recording or no meeting ID, ignoring speech result');
             return;
         }
 
@@ -150,7 +146,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 }
             }
         }
-    }, [isRecording, saveSpeechToQueue]);
+    }, [saveSpeechToQueue]);
 
     // 音声認識の初期化
     const initializeSpeechRecognition = useCallback(() => {
@@ -167,11 +163,12 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             logDebug('Speech recognition started');
             setError(null);
             setIsRecording(true);
+            isRecordingRef.current = true;
         };
 
         recognition.onend = () => {
             logDebug('Speech recognition ended');
-            if (isRecording && meetingIdRef.current && !recognition.manualStop) {
+            if (isRecordingRef.current && meetingIdRef.current && !recognition.manualStop) {
                 try {
                     recognition.start();
                     logDebug('Recognition restarted');
@@ -179,6 +176,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                     console.error('Failed to restart recognition:', error);
                     setError('Failed to restart speech recognition');
                     setIsRecording(false);
+                    isRecordingRef.current = false;
                 }
             }
         };
@@ -189,12 +187,13 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             setError(`Speech recognition error: ${event.error}`);
             if (event.error === 'not-allowed') {
                 setIsRecording(false);
+                isRecordingRef.current = false;
             }
         };
 
         recognition.onresult = handleSpeechResult;
         return recognition;
-    }, [handleSpeechResult, isRecording]);
+    }, [handleSpeechResult]);
 
     // 録音開始
     const startRecording = async () => {
@@ -224,16 +223,23 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             setMeetingId(data.meetingId);
             meetingIdRef.current = data.meetingId;
 
-            // 音声認識の開始
-            const recognition = initializeSpeechRecognition();
-            recognitionRef.current = recognition;
-            await recognition.start();
+            // 音声認識の初期化と開始
+            if (!recognitionRef.current) {
+                recognitionRef.current = initializeSpeechRecognition();
+            }
+
+            // 先にisRecordingをtrueに設定
+            setIsRecording(true);
+            isRecordingRef.current = true;
+
+            await recognitionRef.current.start();
             logDebug('Recognition started successfully');
 
         } catch (error) {
             console.error('Failed to start recording:', error);
             setError(error.message);
             setIsRecording(false);
+            isRecordingRef.current = false;
             setMeetingId(null);
             meetingIdRef.current = null;
         } finally {
@@ -253,8 +259,11 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         try {
             setIsSaving(true);
 
+            // 先にisRecordingをfalseに設定
+            setIsRecording(false);
+            isRecordingRef.current = false;
+
             if (recognitionRef.current) {
-                recognitionRef.current.manualStop = true;
                 recognitionRef.current.stop();
                 logDebug('Recognition stopped');
             }
@@ -283,7 +292,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             // 状態のリセット
             setMeetingId(null);
             meetingIdRef.current = null;
-            setIsRecording(false);
             recognitionRef.current = null;
 
         } catch (error) {
@@ -299,6 +307,12 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     useEffect(() => {
         return () => {
             if (recognitionRef.current) {
+                recognitionRef.current.stop();
+                recognitionRef.current = null;
+            }
+            setIsRecording(false);
+            isRecordingRef.current = false;
+            if (meetingIdRef.current) {
                 stopRecording();
             }
         };
