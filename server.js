@@ -38,7 +38,7 @@ const logRoomState = (roomId) => {
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
-    
+
     const { roomId, userId, userName } = socket.handshake.query;
     console.log(`User ${userName} (${userId}) joining room ${roomId}`);
 
@@ -95,21 +95,31 @@ io.on('connection', (socket) => {
         console.error('Socket error:', error);
     });
 
+    // 音声データの中継
+    socket.on('speech-data', (data) => {
+        // 送信者以外のルーム内の全員に転送
+        socket.to(roomId).emit('speech-data', {
+            content: data.content,
+            userId: data.userId,
+            userName: data.userName
+        });
+    });
+
     // 切断時の処理
     socket.on('disconnect', () => {
         console.log(`Client disconnected: ${userName} (${userId})`);
-        
+
         if (rooms.has(roomId)) {
             // ユーザーをルームから削除
             rooms.get(roomId).delete(socket.id);
-            
+
             // 他の参加者に切断を通知
             io.to(roomId).emit('user-disconnected', userId);
-            
+
             // 更新された参加者リストを送信
             const remainingUsers = Array.from(rooms.get(roomId).values());
             io.to(roomId).emit('users', remainingUsers);
-            
+
             console.log(`Remaining users in room ${roomId}:`, remainingUsers);
 
             // ルームが空になった場合は削除

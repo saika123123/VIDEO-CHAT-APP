@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
+const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef }) => {
     // State管理
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
@@ -15,7 +15,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const processingRef = useRef(false);
     const pendingSpeechesRef = useRef([]);
     const isInitializedRef = useRef(false);
-    const isRecordingRef = useRef(false); // isRecordingのref版を追加
+    const isRecordingRef = useRef(false);
 
     // 定数
     const maxRetries = 3;
@@ -27,8 +27,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data ? data : '');
     };
 
-    // キューに音声を追加
-    const saveSpeechToQueue = useCallback((content) => {
+    // キューに音声を追加（送信者の情報を含める）
+    const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
         if (!content.trim()) {
             logDebug('Empty content, skipping');
             return;
@@ -42,6 +42,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         const speechData = {
             content: content.trim(),
             timestamp: new Date().toISOString(),
+            userId: speakerId,
+            userName: speakerName,
             retryCount: 0
         };
 
@@ -81,7 +83,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 },
                 body: JSON.stringify({
                     meetingId: meetingIdRef.current,
-                    userId,
+                    userId: currentSpeech.userId,
                     content: currentSpeech.content
                 })
             });
@@ -97,7 +99,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 ...prev,
                 {
                     id: data.id,
-                    userName,
+                    userName: currentSpeech.userName,
                     content: currentSpeech.content,
                     timestamp: currentSpeech.timestamp
                 }
@@ -124,14 +126,28 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 setTimeout(processSpeechQueue, retryDelay);
             }
         }
-    }, [userId, userName, maxRetries]);
+    }, [maxRetries]);
+
+    // Socket.IOイベントハンドラの設定
+    useEffect(() => {
+        if (!socketRef.current || !isRecording) return;
+
+        // 他の参加者からの音声データを受信
+        const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
+            logDebug(`Received remote speech from ${speakerName}:`, content);
+            saveSpeechToQueue(content, speakerId, speakerName);
+        };
+
+        socketRef.current.on('speech-data', handleRemoteSpeech);
+
+        return () => {
+            socketRef.current.off('speech-data', handleRemoteSpeech);
+        };
+    }, [socketRef, isRecording, saveSpeechToQueue]);
 
     // 音声認識結果のハンドリング
     const handleSpeechResult = useCallback((event) => {
-        logDebug(`Speech result received - isRecording: ${isRecordingRef.current}, meetingId: ${meetingIdRef.current}`);
-
         if (!isRecordingRef.current || !meetingIdRef.current) {
-            logDebug('Not recording or no meeting ID, ignoring speech result');
             return;
         }
 
@@ -141,12 +157,21 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             if (result.isFinal) {
                 const transcript = result[0].transcript.trim();
                 if (transcript) {
-                    logDebug('Final transcript:', transcript);
-                    saveSpeechToQueue(transcript);
+                    // 自分の音声をキューに追加
+                    saveSpeechToQueue(transcript, userId, userName);
+
+                    // 他の参加者に音声データを送信
+                    if (socketRef.current) {
+                        socketRef.current.emit('speech-data', {
+                            content: transcript,
+                            userId,
+                            userName
+                        });
+                    }
                 }
             }
         }
-    }, [saveSpeechToQueue]);
+    }, [userId, userName, saveSpeechToQueue, socketRef]);
 
     // 音声認識の初期化
     const initializeSpeechRecognition = useCallback(() => {
@@ -223,12 +248,20 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             setMeetingId(data.meetingId);
             meetingIdRef.current = data.meetingId;
 
+            // Socket.IOで録音開始を通知
+            if (socketRef.current) {
+                socketRef.current.emit('recording-started', {
+                    meetingId: data.meetingId,
+                    userId,
+                    userName
+                });
+            }
+
             // 音声認識の初期化と開始
             if (!recognitionRef.current) {
                 recognitionRef.current = initializeSpeechRecognition();
             }
 
-            // 先にisRecordingをtrueに設定
             setIsRecording(true);
             isRecordingRef.current = true;
 
@@ -259,7 +292,13 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         try {
             setIsSaving(true);
 
-            // 先にisRecordingをfalseに設定
+            // Socket.IOで録音停止を通知
+            if (socketRef.current) {
+                socketRef.current.emit('recording-stopped', {
+                    meetingId: meetingIdRef.current
+                });
+            }
+
             setIsRecording(false);
             isRecordingRef.current = false;
 
@@ -318,7 +357,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
         };
     }, []);
 
-    // UI部分
     return (
         <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
             <div className="flex items-center justify-between mb-4">
