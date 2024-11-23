@@ -9,6 +9,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isInitiator, setIsInitiator] = useState(false);
+    const [recordingInitiator, setRecordingInitiator] = useState(null);
 
     // Ref管理
     const recognitionRef = useRef(null);
@@ -17,7 +18,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     const pendingSpeechesRef = useRef([]);
     const isInitializedRef = useRef(false);
     const isRecordingRef = useRef(false);
-    const localSocketRef = useRef(null); // ローカルでsocketRefを保持
+    const localSocketRef = useRef(null);
 
     // 定数
     const maxRetries = 3;
@@ -132,9 +133,43 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
 
     // Socket.IOイベントハンドラの設定
     useEffect(() => {
-        if (!socketRef.current || !isRecording) return;
+        if (!socketRef.current) return;
 
-        localSocketRef.current = socketRef.current; // ローカル参照を更新
+        localSocketRef.current = socketRef.current;
+
+        // 録音開始イベントのハンドラ
+        const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
+            logDebug(`Received recording start from ${initiatorName}`);
+            if (isRecordingRef.current) return;
+
+            setRecordingInitiator(initiatorName);
+            setMeetingId(remoteMeetingId);
+            meetingIdRef.current = remoteMeetingId;
+
+            try {
+                if (!recognitionRef.current) {
+                    recognitionRef.current = initializeSpeechRecognition();
+                }
+                await recognitionRef.current.start();
+                setIsRecording(true);
+                isRecordingRef.current = true;
+            } catch (error) {
+                console.error('Error starting remote recording:', error);
+                setError(`Failed to start recording: ${error.message}`);
+            }
+        };
+
+        // 録音停止イベントのハンドラ
+        const handleRecordingStop = async ({ initiatorId }) => {
+            logDebug(`Received recording stop from ${initiatorId}`);
+            if (!isRecordingRef.current) return;
+
+            try {
+                await stopRecording(false); // false means don't emit stop event
+            } catch (error) {
+                console.error('Error stopping remote recording:', error);
+            }
+        };
 
         // 他の参加者からの音声データを受信
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
@@ -142,10 +177,15 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             saveSpeechToQueue(content, speakerId, speakerName);
         };
 
+        // イベントリスナーの登録
+        localSocketRef.current.on('recording-start', handleRecordingStart);
+        localSocketRef.current.on('recording-stop', handleRecordingStop);
         localSocketRef.current.on('speech-data', handleRemoteSpeech);
 
         return () => {
             if (localSocketRef.current) {
+                localSocketRef.current.off('recording-start', handleRecordingStart);
+                localSocketRef.current.off('recording-stop', handleRecordingStop);
                 localSocketRef.current.off('speech-data', handleRemoteSpeech);
             }
         };
@@ -253,13 +293,15 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             // 状態の更新
             setMeetingId(data.meetingId);
             meetingIdRef.current = data.meetingId;
+            setIsInitiator(true);
+            setRecordingInitiator(userName);
 
             // Socket.IOで録音開始を通知
             if (socketRef.current) {
-                socketRef.current.emit('recording-started', {
+                socketRef.current.emit('recording-start', {
                     meetingId: data.meetingId,
-                    userId,
-                    userName
+                    initiatorId: userId,
+                    initiatorName: userName
                 });
             }
 
@@ -287,7 +329,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     };
 
     // 録音停止
-    const stopRecording = async () => {
+    const stopRecording = async (emitEvent = true) => {
         logDebug('Stopping recording');
 
         if (!meetingIdRef.current) {
@@ -298,10 +340,11 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         try {
             setIsSaving(true);
 
-            // Socket.IOで録音停止を通知
-            if (socketRef.current) {
-                socketRef.current.emit('recording-stopped', {
-                    meetingId: meetingIdRef.current
+            // Socket.IOで録音停止を通知（initiatorの場合のみ）
+            if (emitEvent && socketRef.current) {
+                socketRef.current.emit('recording-stop', {
+                    meetingId: meetingIdRef.current,
+                    initiatorId: userId
                 });
             }
 
@@ -319,17 +362,19 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            // ミーティングを終了
-            const response = await fetch(`/api/meetings/${meetingIdRef.current}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    endTime: new Date().toISOString()
-                })
-            });
+            // ミーティングを終了（initiatorの場合のみ）
+            if (emitEvent) {
+                const response = await fetch(`/api/meetings/${meetingIdRef.current}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        endTime: new Date().toISOString()
+                    })
+                });
 
-            if (!response.ok) {
-                throw new Error('Failed to end meeting');
+                if (!response.ok) {
+                    throw new Error('Failed to end meeting');
+                }
             }
 
             logDebug('Meeting ended successfully');
@@ -338,6 +383,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             setMeetingId(null);
             meetingIdRef.current = null;
             recognitionRef.current = null;
+            setIsInitiator(false);
+            setRecordingInitiator(null);
 
         } catch (error) {
             console.error('Error during stop recording:', error);
@@ -358,7 +405,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             setIsRecording(false);
             isRecordingRef.current = false;
             if (meetingIdRef.current) {
-                stopRecording();
+                stopRecording(true);
             }
         };
     }, []);
@@ -368,7 +415,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold">議事録</h3>
                 <button
-                    onClick={isRecording ? stopRecording : startRecording}
+                    onClick={isRecording ? () => stopRecording(true) : startRecording}
                     disabled={!isAudioOn || isSaving}
                     className={`
                         px-4 py-2 rounded-lg 
@@ -396,9 +443,19 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             )}
 
             {isRecording && (
-                <div className="mb-4 p-2 bg-green-100 text-green-700 rounded text-sm flex items-center gap-2">
-                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                    録音中... ({pendingSpeechesRef.current.length} 件処理待ち)
+                <div className="mb-4 p-2 bg-green-100 text-green-700 rounded text-sm">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                        録音中...
+                    </div>
+                    {recordingInitiator && (
+                        <div className="text-xs mt-1">
+                            開始者: {recordingInitiator}
+                        </div>
+                    )}
+                    <div className="text-xs mt-1">
+                        処理待ち: {pendingSpeechesRef.current.length} 件
+                    </div>
                 </div>
             )}
 
