@@ -121,20 +121,20 @@ export default function VideoRoom({ roomId, userId }) {
             if (meetingRecorderRef.current?.endMeeting) {
                 await meetingRecorderRef.current.endMeeting();
             }
-    
+
             // メディアストリームの停止
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
-    
+
             // WebRTC接続のクリーンアップ
             Object.values(peersRef.current).forEach(peer => peer.close());
-    
+
             // Socket接続の切断
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
-    
+
             // ホームページへリダイレクト
             window.location.href = '/';
         } catch (error) {
@@ -686,6 +686,8 @@ export default function VideoRoom({ roomId, userId }) {
                 userId={userId}
                 userName={userName}
                 isAudioOn={isAudioOn}
+                users={users}
+                socketRef={socketRef}
             />
             {/* 招待案内 */}
             {users.length === 0 && (

@@ -8,6 +8,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isInitiator, setIsInitiator] = useState(false);
 
     // Ref管理
     const recognitionRef = useRef(null);
@@ -16,6 +17,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     const pendingSpeechesRef = useRef([]);
     const isInitializedRef = useRef(false);
     const isRecordingRef = useRef(false);
+    const localSocketRef = useRef(null); // ローカルでsocketRefを保持
 
     // 定数
     const maxRetries = 3;
@@ -132,18 +134,22 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
     useEffect(() => {
         if (!socketRef.current || !isRecording) return;
 
+        localSocketRef.current = socketRef.current; // ローカル参照を更新
+
         // 他の参加者からの音声データを受信
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
-            logDebug(`Received remote speech from ${speakerName}:`, content);
+            if (!isRecording) return;
             saveSpeechToQueue(content, speakerId, speakerName);
         };
 
-        socketRef.current.on('speech-data', handleRemoteSpeech);
+        localSocketRef.current.on('speech-data', handleRemoteSpeech);
 
         return () => {
-            socketRef.current.off('speech-data', handleRemoteSpeech);
+            if (localSocketRef.current) {
+                localSocketRef.current.off('speech-data', handleRemoteSpeech);
+            }
         };
-    }, [socketRef, isRecording, saveSpeechToQueue]);
+    }, [socketRef?.current, isRecording, saveSpeechToQueue]);
 
     // 音声認識結果のハンドリング
     const handleSpeechResult = useCallback((event) => {
