@@ -6,6 +6,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
     const recognitionRef = useRef(null);
     const activeMeetingIdRef = useRef(null);
     const isInitializedRef = useRef(false);
@@ -15,6 +16,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     const retryDelay = 1000;
 
     // 音声認識の結果をキューに追加
+    // saveSpeechToQueue関数を修正
     const saveSpeechToQueue = useCallback((content) => {
         if (!content.trim()) return;
 
@@ -26,6 +28,9 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
 
         console.log('Adding speech to queue:', speechData);
         pendingSpeechesRef.current.push(speechData);
+
+        // キューの状態をログ出力
+        console.log('Current queue length:', pendingSpeechesRef.current.length);
     }, []);
 
     // キューの処理
@@ -120,6 +125,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
     }, [isRecording, saveSpeechToQueue]);
 
     // 音声認識の初期化
+    // 音声認識の初期化を修正
     const initializeSpeechRecognition = useCallback(() => {
         if (!('webkitSpeechRecognition' in window)) {
             setError('This browser does not support speech recognition');
@@ -138,7 +144,10 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
 
         recognition.onend = () => {
             console.log('Speech recognition ended');
-            if (isRecording && activeMeetingIdRef.current) {
+            // onendイベントで処理完了フラグを設定
+            recognition.isEnded = true;
+
+            if (isRecording && activeMeetingIdRef.current && !recognition.manualStop) {
                 try {
                     recognition.start();
                 } catch (error) {
@@ -198,24 +207,51 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
 
     // 録音停止
     // stopRecording関数の修正
+    // 録音停止の処理を修正
+    // 録音停止の処理を修正
     const stopRecording = async () => {
         if (!activeMeetingIdRef.current) return;
 
         try {
-            // まず音声認識を停止
-            if (recognitionRef.current) {
-                recognitionRef.current.stop();
-            }
+            setIsSaving(true);
 
-            console.log('Processing remaining speeches...');
+            // 音声認識の停止をPromiseでラップ
+            const stopRecognition = () => {
+                return new Promise((resolve) => {
+                    if (!recognitionRef.current) {
+                        resolve();
+                        return;
+                    }
 
-            // 残っている音声データの処理を確実に行う
+                    // 手動停止フラグを設定
+                    recognitionRef.current.manualStop = true;
+
+                    // onendイベントのリスナーを追加
+                    const handleEnd = () => {
+                        console.log('Recognition stopped completely');
+                        recognitionRef.current.removeEventListener('end', handleEnd);
+                        // 最後の結果を処理するための短い遅延
+                        setTimeout(resolve, 500);
+                    };
+
+                    recognitionRef.current.addEventListener('end', handleEnd);
+                    recognitionRef.current.stop();
+                });
+            };
+
+            // 音声認識の完全な停止を待つ
+            console.log('Stopping speech recognition...');
+            await stopRecognition();
+            console.log('Speech recognition stopped');
+
+            // 残っている音声データの処理
+            console.log('Processing remaining speeches...', pendingSpeechesRef.current.length);
+
             const processRemainingSpeeches = async () => {
                 while (pendingSpeechesRef.current.length > 0) {
-                    console.log(`${pendingSpeechesRef.current.length} speeches remaining`);
-
-                    // キューの先頭の要素を処理
                     const speech = pendingSpeechesRef.current[0];
+                    console.log('Processing speech:', speech);
+
                     try {
                         const response = await fetch('/api/speeches', {
                             method: 'POST',
@@ -236,10 +272,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                         const data = await response.json();
                         console.log('Speech saved:', data);
 
-                        // 成功したらキューから削除
                         pendingSpeechesRef.current.shift();
 
-                        // UIを更新
                         setTranscript(prev => [...prev, {
                             id: data.id,
                             userName,
@@ -254,18 +288,40 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                         if (speech.retryCount >= maxRetries) {
                             console.error('Max retries reached, skipping speech');
                             pendingSpeechesRef.current.shift();
+                        } else {
+                            // リトライ間隔を設定
+                            await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            continue;
                         }
                     }
 
-                    // 各処理の間に短い待機時間を設ける
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
             };
 
-            // 残りの音声データを処理
             await processRemainingSpeeches();
+            console.log('All speeches processed successfully');
 
-            console.log('All speeches processed, ending meeting...');
+        } catch (err) {
+            console.error('Error during stop recording:', err);
+            setError(`Failed to stop recording: ${err.message}`);
+        } finally {
+            setIsRecording(false);
+            recognitionRef.current = null;
+            processingRef.current = false;
+            setIsSaving(false);
+        }
+    };
+
+    // 会議終了の処理を分離
+    const endMeeting = async () => {
+        if (!activeMeetingIdRef.current) return;
+
+        try {
+            // もし録音中なら、まず録音を停止
+            if (isRecording) {
+                await stopRecording();
+            }
 
             // すべての処理が完了してからミーティングを終了
             const response = await fetch(`/api/meetings/${activeMeetingIdRef.current}`, {
@@ -283,42 +339,30 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
             const data = await response.json();
             console.log('Meeting ended successfully:', data);
 
-        } catch (error) {
-            console.error('Error during stop recording:', error);
-            setError(`Failed to stop recording: ${error.message}`);
-        } finally {
             // 状態をリセット
-            setIsRecording(false);
             setMeetingId(null);
             activeMeetingIdRef.current = null;
-            recognitionRef.current = null;
             setTranscript([]);
             pendingSpeechesRef.current = [];
-            processingRef.current = false;
+
+        } catch (error) {
+            console.error('Failed to end meeting:', error);
+            setError(`Failed to end meeting: ${error.message}`);
         }
     };
 
-    // コンポーネントのアンマウント時の処理も改善
+    // コンポーネントのアンマウント時の処理
     useEffect(() => {
         return () => {
             const cleanup = async () => {
                 if (recognitionRef.current) {
-                    recognitionRef.current.stop();
-                }
-                if (isRecording) {
                     await stopRecording();
                 }
+                await endMeeting();
             };
             cleanup();
         };
     }, []);
-
-    // マイクのミュート時の処理
-    useEffect(() => {
-        if (!isAudioOn && isRecording) {
-            stopRecording();
-        }
-    }, [isAudioOn, isRecording]);
 
     return (
         <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
@@ -326,7 +370,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                 <h3 className="text-lg font-bold">議事録</h3>
                 <button
                     onClick={isRecording ? stopRecording : startRecording}
-                    disabled={!isAudioOn || error}
+                    disabled={!isAudioOn || error || isSaving}
                     className={`
                         px-4 py-2 rounded-lg 
                         transition-all duration-200 ease-in-out
@@ -335,32 +379,14 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn }) => {
                             ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
                             : 'bg-blue-600 hover:bg-blue-700 text-white'
                         }
-                        ${(!isAudioOn || error) && 'opacity-50 cursor-not-allowed'}
+                        ${(!isAudioOn || error || isSaving) && 'opacity-50 cursor-not-allowed'}
                     `}
                 >
-                    <svg
-                        className={`w-5 h-5 ${isRecording ? 'animate-ping' : ''}`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        {isRecording ? (
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-                            />
-                        ) : (
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                            />
-                        )}
-                    </svg>
-                    {isRecording ? '録音停止' : '録音開始'}
+                    {isSaving ? (
+                        <span>保存中...</span>
+                    ) : (
+                        <span>{isRecording ? '録音停止' : '録音開始'}</span>
+                    )}
                 </button>
             </div>
 

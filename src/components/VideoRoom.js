@@ -115,15 +115,33 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
     // 退出処理
-    const leaveRoom = () => {
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
+    const leaveRoom = async () => {
+        try {
+            // もし録音中なら、まず録音を停止して議事録を保存
+            if (meetingRecorderRef.current?.endMeeting) {
+                await meetingRecorderRef.current.endMeeting();
+            }
+    
+            // メディアストリームの停止
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+            }
+    
+            // WebRTC接続のクリーンアップ
+            Object.values(peersRef.current).forEach(peer => peer.close());
+    
+            // Socket接続の切断
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+            }
+    
+            // ホームページへリダイレクト
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Error during room exit:', error);
+            // エラーが発生してもホームページへ移動
+            window.location.href = '/';
         }
-        Object.values(peersRef.current).forEach(peer => peer.close());
-        if (socketRef.current) {
-            socketRef.current.disconnect();
-        }
-        window.location.href = '/';
     };
 
     // グリッドレイアウトの計算
