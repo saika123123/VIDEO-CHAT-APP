@@ -42,6 +42,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             return;
         }
 
+        // speech-dataイベントで送信された場合は、そのまま保存
         const speechData = {
             content: content.trim(),
             timestamp: new Date().toISOString(),
@@ -98,10 +99,12 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             const data = await response.json();
             logDebug('Speech saved successfully:', data);
 
+            // 既存のトランスクリプトに追加する際、送信者の情報を含める
             setTranscript(prev => [
                 ...prev,
                 {
                     id: data.id,
+                    userId: currentSpeech.userId,
                     userName: currentSpeech.userName,
                     content: currentSpeech.content,
                     timestamp: currentSpeech.timestamp
@@ -131,94 +134,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         }
     }, [maxRetries]);
 
-    // Socket.IOイベントハンドラの設定
-    useEffect(() => {
-        if (!socketRef.current) return;
-
-        localSocketRef.current = socketRef.current;
-
-        // 録音開始イベントのハンドラ
-        const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
-            logDebug(`Received recording start from ${initiatorName}`);
-            if (isRecordingRef.current) return;
-
-            setRecordingInitiator(initiatorName);
-            setMeetingId(remoteMeetingId);
-            meetingIdRef.current = remoteMeetingId;
-
-            try {
-                if (!recognitionRef.current) {
-                    recognitionRef.current = initializeSpeechRecognition();
-                }
-                await recognitionRef.current.start();
-                setIsRecording(true);
-                isRecordingRef.current = true;
-            } catch (error) {
-                console.error('Error starting remote recording:', error);
-                setError(`Failed to start recording: ${error.message}`);
-            }
-        };
-
-        // 録音停止イベントのハンドラ
-        const handleRecordingStop = async ({ initiatorId }) => {
-            logDebug(`Received recording stop from ${initiatorId}`);
-            if (!isRecordingRef.current) return;
-
-            try {
-                await stopRecording(false); // false means don't emit stop event
-            } catch (error) {
-                console.error('Error stopping remote recording:', error);
-            }
-        };
-
-        // 他の参加者からの音声データを受信
-        const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
-            if (!isRecording) return;
-            saveSpeechToQueue(content, speakerId, speakerName);
-        };
-
-        // イベントリスナーの登録
-        localSocketRef.current.on('recording-start', handleRecordingStart);
-        localSocketRef.current.on('recording-stop', handleRecordingStop);
-        localSocketRef.current.on('speech-data', handleRemoteSpeech);
-
-        return () => {
-            if (localSocketRef.current) {
-                localSocketRef.current.off('recording-start', handleRecordingStart);
-                localSocketRef.current.off('recording-stop', handleRecordingStop);
-                localSocketRef.current.off('speech-data', handleRemoteSpeech);
-            }
-        };
-    }, [socketRef?.current, isRecording, saveSpeechToQueue]);
-
-    // 音声認識結果のハンドリング
-    const handleSpeechResult = useCallback((event) => {
-        if (!isRecordingRef.current || !meetingIdRef.current) {
-            return;
-        }
-
-        const results = event.results;
-        for (let i = event.resultIndex; i < results.length; i++) {
-            const result = results[i];
-            if (result.isFinal) {
-                const transcript = result[0].transcript.trim();
-                if (transcript) {
-                    // 自分の音声をキューに追加
-                    saveSpeechToQueue(transcript, userId, userName);
-
-                    // 他の参加者に音声データを送信
-                    if (socketRef.current) {
-                        socketRef.current.emit('speech-data', {
-                            content: transcript,
-                            userId,
-                            userName
-                        });
-                    }
-                }
-            }
-        }
-    }, [userId, userName, saveSpeechToQueue, socketRef]);
-
     // 音声認識の初期化
     const initializeSpeechRecognition = useCallback(() => {
         if (!('webkitSpeechRecognition' in window)) {
@@ -233,8 +148,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         recognition.onstart = () => {
             logDebug('Speech recognition started');
             setError(null);
-            setIsRecording(true);
-            isRecordingRef.current = true;
         };
 
         recognition.onend = () => {
@@ -246,8 +159,6 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                 } catch (error) {
                     console.error('Failed to restart recognition:', error);
                     setError('Failed to restart speech recognition');
-                    setIsRecording(false);
-                    isRecordingRef.current = false;
                 }
             }
         };
@@ -264,7 +175,90 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
 
         recognition.onresult = handleSpeechResult;
         return recognition;
-    }, [handleSpeechResult]);
+    }, []);
+
+    // Socket.IOイベントハンドラの設定
+    useEffect(() => {
+        if (!socketRef.current) return;
+
+        localSocketRef.current = socketRef.current;
+
+        // 録音開始イベントのハンドラ
+        const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
+            logDebug(`Received recording start from ${initiatorName}`);
+
+            setRecordingInitiator(initiatorName);
+            setMeetingId(remoteMeetingId);
+            meetingIdRef.current = remoteMeetingId;
+            setIsRecording(true);
+            isRecordingRef.current = true;
+
+            if (isAudioOn) {
+                try {
+                    if (!recognitionRef.current) {
+                        recognitionRef.current = initializeSpeechRecognition();
+                    }
+                    await recognitionRef.current.start();
+                } catch (error) {
+                    console.error('Error starting remote recording:', error);
+                    setError(`Failed to start recording: ${error.message}`);
+                }
+            }
+        };
+
+        // 録音停止イベントのハンドラ
+        const handleRecordingStop = async ({ initiatorId }) => {
+            logDebug(`Received recording stop from ${initiatorId}`);
+            await stopRecording(false); // false means don't emit stop event
+        };
+
+        // 他の参加者からの音声データを受信
+        const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
+            if (!isRecordingRef.current) return;
+            saveSpeechToQueue(content, speakerId, speakerName);
+        };
+
+        // イベントリスナーの登録
+        localSocketRef.current.on('recording-start', handleRecordingStart);
+        localSocketRef.current.on('recording-stop', handleRecordingStop);
+        localSocketRef.current.on('speech-data', handleRemoteSpeech);
+
+        return () => {
+            if (localSocketRef.current) {
+                localSocketRef.current.off('recording-start', handleRecordingStart);
+                localSocketRef.current.off('recording-stop', handleRecordingStop);
+                localSocketRef.current.off('speech-data', handleRemoteSpeech);
+            }
+        };
+    }, [socketRef?.current, isRecording, saveSpeechToQueue, isAudioOn, initializeSpeechRecognition]);
+
+    // 音声認識結果のハンドリング
+    const handleSpeechResult = useCallback((event) => {
+        if (!isRecordingRef.current || !meetingIdRef.current) {
+            return;
+        }
+
+        const results = event.results;
+        for (let i = event.resultIndex; i < results.length; i++) {
+            const result = results[i];
+            if (result.isFinal) {
+                const transcript = result[0].transcript.trim();
+                if (transcript) {
+                    // 他の参加者に音声データを送信
+                    if (socketRef.current) {
+                        socketRef.current.emit('speech-data', {
+                            content: transcript,
+                            userId,
+                            userName
+                        });
+                    }
+
+                    // 自分の音声をキューに追加
+                    saveSpeechToQueue(transcript, userId, userName);
+                }
+            }
+        }
+    }, [userId, userName, saveSpeechToQueue]);
 
     // 録音開始
     const startRecording = async () => {
@@ -301,7 +295,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                 socketRef.current.emit('recording-start', {
                     meetingId: data.meetingId,
                     initiatorId: userId,
-                    initiatorName: userName
+                    initiatorName: userName,
+                    roomId: roomId
                 });
             }
 
@@ -344,7 +339,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             if (emitEvent && socketRef.current) {
                 socketRef.current.emit('recording-stop', {
                     meetingId: meetingIdRef.current,
-                    initiatorId: userId
+                    initiatorId: userId,
+                    roomId: roomId
                 });
             }
 
@@ -446,7 +442,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                 <div className="mb-4 p-2 bg-green-100 text-green-700 rounded text-sm">
                     <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                        録音中... 
+                        録音中...
                     </div>
                     {recordingInitiator && (
                         <div className="text-xs mt-1">
