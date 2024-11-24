@@ -30,12 +30,11 @@ const mediaConstraints = {
         frameRate: { ideal: 30 }
     }
 };
-// 背景画像のURLを生成する関数をここに追加
-const getBackgroundUrl = (path) => {
+ // 背景画像のURLを生成する関数をここに追加
+ const getBackgroundUrl = (path) => {
     if (path.startsWith('http')) return path;
     return `${window.location.origin}${path}`;
 };
-
 // テスト用のフェイクストリームを生成する関数
 const createFakeStream = (userName) => {
     const canvas = document.createElement('canvas');
@@ -517,7 +516,7 @@ export default function VideoRoom({ roomId, userId }) {
         <div
             className="min-h-screen p-4"
             style={{
-                backgroundImage: `url(${getBackgroundUrl(background)})`,
+                backgroundImage: `url(${background})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center'
             }}
