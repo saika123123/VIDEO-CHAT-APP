@@ -92,6 +92,49 @@ export default function VideoRoom({ roomId, userId }) {
     const makingOfferRef = useRef(false);
     const isSettingRemoteAnswerRef = useRef(false);
 
+    // WebRTC接続の再接続を試みる関数
+    const retryConnection = async (targetSocketId, maxAttempts = 3) => {
+        let attempts = 0;
+        const attemptConnect = async () => {
+            try {
+                if (attempts >= maxAttempts) {
+                    console.error(`Failed to connect to peer ${targetSocketId} after ${maxAttempts} attempts`);
+                    return;
+                }
+                attempts++;
+
+                if (peersRef.current[targetSocketId]) {
+                    peersRef.current[targetSocketId].close();
+                }
+
+                const peer = createPeer(targetSocketId, true);
+                peersRef.current[targetSocketId] = peer;
+
+                // ネゴシエーションを手動でトリガー
+                const offer = await peer.createOffer();
+                await peer.setLocalDescription(offer);
+
+                socketRef.current.emit('offer', {
+                    offer,
+                    to: targetSocketId
+                });
+
+                // 接続状態を監視
+                setTimeout(() => {
+                    if (peer.connectionState !== 'connected') {
+                        console.log(`Retry attempt ${attempts} for peer ${targetSocketId}`);
+                        attemptConnect();
+                    }
+                }, 5000); // 5秒後に接続状態をチェック
+            } catch (error) {
+                console.error('Connection retry failed:', error);
+                setTimeout(attemptConnect, 2000); // 2秒後に再試行
+            }
+        };
+
+        await attemptConnect();
+    };
+
     // カメラのオン/オフを切り替え
     const toggleCamera = () => {
         if (localStreamRef.current) {
@@ -186,9 +229,11 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
     // createPeer関数の定義
+    // createPeer関数の完全な実装
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
 
+        // 既存の接続をクリーンアップ
         if (peersRef.current[targetSocketId]) {
             peersRef.current[targetSocketId].close();
             delete peersRef.current[targetSocketId];
@@ -199,16 +244,40 @@ export default function VideoRoom({ roomId, userId }) {
         let ignoreOffer = false;
         let isSettingRemoteAnswer = false;
 
+        // デバッグ用のログ
+        const logConnectionState = () => {
+            console.log(`Connection state for ${targetSocketId}:`, {
+                connectionState: peer.connectionState,
+                iceConnectionState: peer.iceConnectionState,
+                iceGatheringState: peer.iceGatheringState,
+                signalingState: peer.signalingState
+            });
+        };
+
+        // 接続状態の監視
         peer.onconnectionstatechange = () => {
-            console.log(`Connection state for ${targetSocketId}:`, peer.connectionState);
+            logConnectionState();
             updateDebugInfo({ [`peerState_${targetSocketId}`]: peer.connectionState });
+
+            if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
+                console.log(`Connection ${peer.connectionState} for ${targetSocketId}, attempting recovery...`);
+                // 接続の再確立を試みる
+                retryConnection(targetSocketId);
+            }
         };
 
+        // ICE接続状態の監視
         peer.oniceconnectionstatechange = () => {
-            console.log(`ICE state for ${targetSocketId}:`, peer.iceConnectionState);
+            logConnectionState();
             updateDebugInfo({ [`iceState_${targetSocketId}`]: peer.iceConnectionState });
+
+            if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') {
+                console.log(`ICE connection ${peer.iceConnectionState} for ${targetSocketId}, attempting recovery...`);
+                retryConnection(targetSocketId);
+            }
         };
 
+        // ICE候補の送信
         peer.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
                 console.log('Sending ICE candidate:', candidate);
@@ -219,27 +288,55 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
+        // リモートトラックの処理
         peer.ontrack = (event) => {
-            console.log('ontrack event:', event);
+            console.log('Received remote track:', event);
             const remoteStream = event.streams[0];
+
             if (!remoteStream) {
                 console.warn('No remote stream available');
                 return;
             }
 
+            // トラックの状態を監視
+            event.track.onended = () => {
+                console.log(`Track ${event.track.kind} ended from ${targetSocketId}`);
+            };
+
+            event.track.onmute = () => {
+                console.log(`Track ${event.track.kind} muted from ${targetSocketId}`);
+            };
+
+            event.track.onunmute = () => {
+                console.log(`Track ${event.track.kind} unmuted from ${targetSocketId}`);
+            };
+
             setUsers(prevUsers => {
                 const existingUserIndex = prevUsers.findIndex(u => u.socketId === targetSocketId);
+
                 if (existingUserIndex >= 0) {
-                    if (prevUsers[existingUserIndex].stream?.id === remoteStream.id) {
+                    const existingUser = prevUsers[existingUserIndex];
+
+                    // ストリームが同じ場合は更新しない
+                    if (existingUser.stream?.id === remoteStream.id) {
                         return prevUsers;
                     }
+
+                    // 既存のストリームをクリーンアップ
+                    if (existingUser.stream) {
+                        existingUser.stream.getTracks().forEach(track => track.stop());
+                    }
+
+                    // ユーザー情報を更新
                     const updatedUsers = [...prevUsers];
                     updatedUsers[existingUserIndex] = {
-                        ...updatedUsers[existingUserIndex],
+                        ...existingUser,
                         stream: remoteStream
                     };
                     return updatedUsers;
                 }
+
+                // 新しいユーザーを追加
                 return [...prevUsers, {
                     socketId: targetSocketId,
                     stream: remoteStream,
@@ -249,11 +346,16 @@ export default function VideoRoom({ roomId, userId }) {
             });
         };
 
-        // ネゴシエーション処理の改善
+        // ネゴシエーション処理
         peer.onnegotiationneeded = async () => {
             try {
-                if (makingOfferRef.current) return;
-                makingOfferRef.current = true;
+                if (makingOffer) {
+                    console.log('Already making offer, skipping...');
+                    return;
+                }
+
+                makingOffer = true;
+                console.log(`Creating offer for ${targetSocketId}`);
 
                 await peer.setLocalDescription();
 
@@ -262,19 +364,20 @@ export default function VideoRoom({ roomId, userId }) {
                     to: targetSocketId
                 });
             } catch (err) {
-                console.error('Negotiation failed:', err);
+                console.error('Failed to create offer:', err);
             } finally {
-                makingOfferRef.current = false;
+                makingOffer = false;
             }
         };
 
-        // メディアストリームの追加
+        // ローカルメディアストリームの追加
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => {
                 try {
+                    console.log(`Adding ${track.kind} track to peer ${targetSocketId}`);
                     peer.addTrack(track, localStreamRef.current);
                 } catch (err) {
-                    console.error('Error adding track:', err);
+                    console.error(`Failed to add ${track.kind} track:`, err);
                 }
             });
         }
@@ -283,42 +386,87 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
 
+    // Socket.IOイベントハンドラの初期化
     const initializeSocketConnection = (name) => {
+        if (socketRef.current) {
+            console.log('Cleaning up existing socket connection');
+            socketRef.current.disconnect();
+        }
+
+        console.log('Initializing socket connection');
         socketRef.current = io('http://localhost:3001', {
-            query: { roomId, userId, userName: name }
+            query: { roomId, userId, userName: name },
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 10000
         });
 
+        // 接続イベント
         socketRef.current.on('connect', () => {
             console.log('Connected to signaling server');
             updateDebugInfo({ socketConnected: true });
+
+            // 再接続時の処理
+            users.forEach(user => {
+                if (!peersRef.current[user.socketId]) {
+                    console.log(`Reestablishing connection with ${user.socketId}`);
+                    retryConnection(user.socketId);
+                }
+            });
         });
 
+        // 切断イベント
+        socketRef.current.on('disconnect', (reason) => {
+            console.log('Disconnected from signaling server:', reason);
+            updateDebugInfo({ socketConnected: false, disconnectReason: reason });
+        });
+
+        // 再接続イベント
+        socketRef.current.on('reconnect', (attemptNumber) => {
+            console.log('Reconnected to signaling server', attemptNumber);
+            updateDebugInfo({ socketConnected: true, reconnectAttempt: attemptNumber });
+        });
+
+        // ユーザーリスト更新イベント
         socketRef.current.on('users', (newUsers) => {
             console.log('Received users update:', newUsers);
             updateDebugInfo({ connectedUsers: newUsers.length });
 
             setUsers(prevUsers => {
-                const filteredUsers = newUsers.filter(u => u.userId !== userId);
-                const updatedUsers = filteredUsers.map(newUser => {
-                    const existingUser = prevUsers.find(u => u.socketId === newUser.socketId);
-                    return {
-                        ...newUser,
-                        stream: existingUser?.stream || null
-                    };
-                });
-                return updatedUsers;
-            });
+                const filteredUsers = newUsers
+                    .filter(u => u.userId !== userId)
+                    .map(newUser => {
+                        const existingUser = prevUsers.find(u => u.socketId === newUser.socketId);
+                        return {
+                            ...newUser,
+                            stream: existingUser?.stream || null
+                        };
+                    });
 
-            const filteredUsers = newUsers.filter(u => u.userId !== userId);
-            filteredUsers.forEach(user => {
-                if (!peersRef.current[user.socketId]) {
-                    peersRef.current[user.socketId] = createPeer(user.socketId, true);
-                }
+                // 新しい接続の確立
+                filteredUsers.forEach(user => {
+                    if (!peersRef.current[user.socketId]) {
+                        peersRef.current[user.socketId] = createPeer(user.socketId, true);
+                    }
+                });
+
+                // 不要になった接続のクリーンアップ
+                Object.keys(peersRef.current).forEach(socketId => {
+                    if (!filteredUsers.find(u => u.socketId === socketId)) {
+                        peersRef.current[socketId].close();
+                        delete peersRef.current[socketId];
+                    }
+                });
+
+                return filteredUsers;
             });
         });
 
+        // オファー処理
         socketRef.current.on('offer', async ({ offer, from }) => {
             try {
+                console.log('Received offer from:', from);
                 const peer = peersRef.current[from] || createPeer(from, false);
                 peersRef.current[from] = peer;
 
@@ -327,7 +475,7 @@ export default function VideoRoom({ roomId, userId }) {
                     (peer.signalingState === "stable" || isSettingRemoteAnswerRef.current);
 
                 const offerCollision = !readyForOffer;
-                const ignoreOffer = offerCollision && socketRef.current.id < from;
+                ignoreOffer = offerCollision && socketRef.current.id < from;
 
                 if (ignoreOffer) {
                     console.log('Ignoring colliding offer');
@@ -351,8 +499,10 @@ export default function VideoRoom({ roomId, userId }) {
             }
         });
 
+        // アンサー処理
         socketRef.current.on('answer', async ({ answer, from }) => {
             try {
+                console.log('Received answer from:', from);
                 const peer = peersRef.current[from];
                 if (!peer) {
                     console.warn('No peer connection found for answer');
@@ -369,8 +519,11 @@ export default function VideoRoom({ roomId, userId }) {
                 updateDebugInfo({ answerHandlingError: err.message });
             }
         });
+
+        // ICE candidate処理
         socketRef.current.on('ice-candidate', async ({ candidate, from }) => {
             try {
+                console.log('Received ICE candidate from:', from);
                 const peer = peersRef.current[from];
                 if (peer && peer.remoteDescription && peer.remoteDescription.type) {
                     await peer.addIceCandidate(new RTCIceCandidate(candidate));
@@ -381,24 +534,38 @@ export default function VideoRoom({ roomId, userId }) {
             }
         });
 
+        // ユーザー切断処理
         socketRef.current.on('user-disconnected', (disconnectedUserId) => {
             console.log('User disconnected:', disconnectedUserId);
-            setUsers(prevUsers => prevUsers.filter(user => user.userId !== disconnectedUserId));
 
-            Object.entries(peersRef.current).forEach(([socketId, peer]) => {
-                if (users.find(u => u.socketId === socketId && u.userId === disconnectedUserId)) {
-                    peer.close();
-                    delete peersRef.current[socketId];
+            setUsers(prevUsers => {
+                const disconnectedUser = prevUsers.find(user => user.userId === disconnectedUserId);
+                if (disconnectedUser) {
+                    // ストリームのクリーンアップ
+                    if (disconnectedUser.stream) {
+                        disconnectedUser.stream.getTracks().forEach(track => track.stop());
+                    }
+
+                    // Peer接続のクリーンアップ
+                    if (peersRef.current[disconnectedUser.socketId]) {
+                        peersRef.current[disconnectedUser.socketId].close();
+                        delete peersRef.current[disconnectedUser.socketId];
+                    }
                 }
+
+                return prevUsers.filter(user => user.userId !== disconnectedUserId);
             });
 
             updateDebugInfo({ lastDisconnected: disconnectedUserId });
         });
     };
 
+
     // useEffect for initialization
+    // useEffectフック
     useEffect(() => {
         let mounted = true;
+        let localStream = null;
 
         const initialize = async () => {
             if (!roomId || !userId || userNameFetchedRef.current) return;
@@ -408,53 +575,96 @@ export default function VideoRoom({ roomId, userId }) {
                 if (!mounted) return;
                 if (!name) throw new Error('ユーザー名の取得に失敗しました');
 
-                let stream;
-                if (process.env.NODE_ENV === 'development' && window.location.search.includes('test=true')) {
-                    stream = createFakeStream(name);
-                } else {
-                    stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+                try {
+                    // メディアストリームの取得
+                    if (process.env.NODE_ENV === 'development' && window.location.search.includes('test=true')) {
+                        localStream = createFakeStream(name);
+                    } else {
+                        localStream = await navigator.mediaDevices.getUserMedia({
+                            ...mediaConstraints,
+                            audio: {
+                                ...mediaConstraints.audio,
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true
+                            }
+                        });
+                    }
+
+                    console.log('Local stream obtained:', {
+                        audioTracks: localStream.getAudioTracks().length,
+                        videoTracks: localStream.getVideoTracks().length
+                    });
+
+                    // トラックの状態監視
+                    localStream.getTracks().forEach(track => {
+                        track.onended = () => {
+                            console.log(`Local ${track.kind} track ended`);
+                            updateDebugInfo({ [`local${track.kind}Ended`]: true });
+                        };
+                    });
+
+                } catch (mediaError) {
+                    console.error('Media access error:', mediaError);
+                    throw new Error(`メディアデバイスへのアクセスに失敗しました: ${mediaError.message}`);
                 }
 
                 if (!mounted) {
-                    if (stream.stopFakeStream) stream.stopFakeStream();
-                    stream.getTracks().forEach(track => track.stop());
+                    if (localStream) {
+                        if (localStream.stopFakeStream) localStream.stopFakeStream();
+                        localStream.getTracks().forEach(track => track.stop());
+                    }
                     return;
                 }
 
-                console.log('Local stream obtained:', stream);
-                localStreamRef.current = stream;
-
+                localStreamRef.current = localStream;
                 setIsConnecting(false);
                 userNameFetchedRef.current = true;
 
                 initializeSocketConnection(name);
+
             } catch (error) {
                 console.error('Initialization error:', error);
-                if (!mounted) return;
-                setDeviceError(error.message);
-                setIsConnecting(false);
-                updateDebugInfo({ initError: error.message });
+                if (mounted) {
+                    setDeviceError(error.message);
+                    setIsConnecting(false);
+                    updateDebugInfo({ initError: error.message });
+                }
             }
         };
 
         initialize();
 
+        // クリーンアップ関数
         return () => {
             mounted = false;
+            console.log('Cleaning up VideoRoom component');
+
+            // ローカルストリームのクリーンアップ
             if (localStreamRef.current) {
+                console.log('Stopping local stream tracks');
                 if (localStreamRef.current.stopFakeStream) {
                     localStreamRef.current.stopFakeStream();
                 }
-                localStreamRef.current.getTracks().forEach(track => track.stop());
+                localStreamRef.current.getTracks().forEach(track => {
+                    track.stop();
+                    console.log(`Stopped ${track.kind} track`);
+                });
+                localStreamRef.current = null;
             }
 
-            Object.values(peersRef.current).forEach(peer => {
+            // Peer接続のクリーンアップ
+            Object.entries(peersRef.current).forEach(([socketId, peer]) => {
+                console.log(`Closing peer connection for ${socketId}`);
                 peer.close();
             });
             peersRef.current = {};
 
+            // Socket接続のクリーンアップ
             if (socketRef.current) {
+                console.log('Disconnecting socket');
                 socketRef.current.disconnect();
+                socketRef.current = null;
             }
         };
     }, [roomId, userId]);
