@@ -30,6 +30,11 @@ const mediaConstraints = {
         frameRate: { ideal: 30 }
     }
 };
+// 背景画像のURLを生成する関数をここに追加
+const getBackgroundUrl = (path) => {
+    if (path.startsWith('http')) return path;
+    return `${window.location.origin}${path}`;
+};
 
 // テスト用のフェイクストリームを生成する関数
 const createFakeStream = (userName) => {
@@ -512,7 +517,7 @@ export default function VideoRoom({ roomId, userId }) {
         <div
             className="min-h-screen p-4"
             style={{
-                backgroundImage: `url(${background})`,
+                backgroundImage: `url(${getBackgroundUrl(background)})`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center'
             }}
@@ -677,7 +682,10 @@ export default function VideoRoom({ roomId, userId }) {
             {/* 背景選択 */}
             {showSettings && (
                 <div className="fixed bottom-24 right-4 z-10">
-                    <BackgroundSelector onSelect={setBackground} />
+                    <BackgroundSelector
+                        onSelect={setBackground}
+                        currentBackground={background}
+                    />
                 </div>
             )}
             {/* 議事録コンポーネント */}
