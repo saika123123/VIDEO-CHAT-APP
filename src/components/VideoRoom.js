@@ -195,15 +195,17 @@ export default function VideoRoom({ roomId, userId }) {
 
         // 既存の接続のクリーンアップ
         if (peersRef.current[targetSocketId]) {
-            const existingPeer = peersRef.current[targetSocketId].peerConnection;
-            existingPeer.ontrack = null;
-            existingPeer.onicecandidate = null;
-            existingPeer.oniceconnectionstatechange = null;
-            existingPeer.onicegatheringstatechange = null;
-            existingPeer.onsignalingstatechange = null;
-            existingPeer.onconnectionstatechange = null;
-            existingPeer.onnegotiationneeded = null;
-            existingPeer.close();
+            const existingPeer = peersRef.current[targetSocketId];
+            if (existingPeer.peerConnection) {
+                existingPeer.peerConnection.ontrack = null;
+                existingPeer.peerConnection.onicecandidate = null;
+                existingPeer.peerConnection.oniceconnectionstatechange = null;
+                existingPeer.peerConnection.onicegatheringstatechange = null;
+                existingPeer.peerConnection.onsignalingstatechange = null;
+                existingPeer.peerConnection.onconnectionstatechange = null;
+                existingPeer.peerConnection.onnegotiationneeded = null;
+                existingPeer.peerConnection.close();
+            }
             delete peersRef.current[targetSocketId];
         }
 
@@ -282,7 +284,7 @@ export default function VideoRoom({ roomId, userId }) {
 
             if (peerConnection.iceConnectionState === 'failed') {
                 console.log('ICE connection failed, attempting restart...');
-                restartConnection(peerConnection);
+                restartConnection();
             }
         };
 
@@ -338,7 +340,6 @@ export default function VideoRoom({ roomId, userId }) {
             });
         };
 
-
         // ネゴシエーションの処理
         peerConnection.onnegotiationneeded = async () => {
             try {
@@ -374,9 +375,17 @@ export default function VideoRoom({ roomId, userId }) {
         // タイムアウトの設定
         setupConnectionTimeout();
 
-        // 拡張されたピアオブジェクトを返す
+        // ここが重要な修正点: peerConnectionを直接返すのではなく、
+        // 必要なメソッドを持つオブジェクトとしてラップして返す
         return {
             peerConnection,
+            close: () => {
+                clearTimeout(connectionTimeout);
+                peerConnection.close();
+            },
+            setLocalDescription: (desc) => peerConnection.setLocalDescription(desc),
+            setRemoteDescription: (desc) => peerConnection.setRemoteDescription(new RTCSessionDescription(desc)),
+            createAnswer: () => peerConnection.createAnswer(),
             addIceCandidate: async (candidate) => {
                 try {
                     if (peerConnection.remoteDescription) {
@@ -392,7 +401,10 @@ export default function VideoRoom({ roomId, userId }) {
                 }
             },
             processIceCandidateQueue,
-            restartConnection
+            restartConnection,
+            get signalingState() {
+                return peerConnection.signalingState;
+            }
         };
     };
 
