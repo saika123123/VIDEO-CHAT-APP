@@ -347,7 +347,9 @@ export default function VideoRoom({ roomId, userId }) {
                 makingOfferRef.current = true;
 
                 console.log('Negotiation needed, creating offer...');
-                await peerConnection.setLocalDescription();
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
                 socketRef.current?.emit('offer', {
                     offer: peerConnection.localDescription,
                     to: targetSocketId
@@ -375,17 +377,29 @@ export default function VideoRoom({ roomId, userId }) {
         // タイムアウトの設定
         setupConnectionTimeout();
 
-        // ここが重要な修正点: peerConnectionを直接返すのではなく、
-        // 必要なメソッドを持つオブジェクトとしてラップして返す
         return {
             peerConnection,
             close: () => {
                 clearTimeout(connectionTimeout);
                 peerConnection.close();
             },
-            setLocalDescription: (desc) => peerConnection.setLocalDescription(desc),
-            setRemoteDescription: (desc) => peerConnection.setRemoteDescription(new RTCSessionDescription(desc)),
-            createAnswer: () => peerConnection.createAnswer(),
+            setLocalDescription: async (desc) => {
+                if (!desc || !desc.type) {
+                    throw new Error('Invalid session description: missing type');
+                }
+                await peerConnection.setLocalDescription(desc);
+            },
+            setRemoteDescription: async (desc) => {
+                if (!desc || !desc.type) {
+                    throw new Error('Invalid session description: missing type');
+                }
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(desc));
+            },
+            createAnswer: async () => {
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                return answer;
+            },
             addIceCandidate: async (candidate) => {
                 try {
                     if (peerConnection.remoteDescription) {
