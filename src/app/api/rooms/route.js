@@ -1,5 +1,4 @@
 import prisma from '@/lib/db';
-import { nanoid } from 'nanoid';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
@@ -17,31 +16,58 @@ export async function POST(req) {
         // トランザクションで処理
         const result = await prisma.$transaction(async (tx) => {
             let room;
+            let roomId = data.roomId;
 
             // 既存の部屋に参加する場合
-            if (data.roomId) {
+            if (roomId) {
                 room = await tx.room.findUnique({
-                    where: { id: data.roomId }
+                    where: { id: roomId }
                 });
 
                 if (!room) {
                     throw new Error('指定された部屋が見つかりません');
                 }
             } else {
+                // ルームID未指定の場合は簡単な番号を生成
+                let counter = 1;
+                do {
+                    roomId = `room${counter}`;
+                    room = await tx.room.findUnique({
+                        where: { id: roomId }
+                    });
+                    counter++;
+                } while (room);
+
                 // 新しい部屋を作成
                 room = await tx.room.create({
                     data: {
-                        id: nanoid(10),
+                        id: roomId,
                         backgroundUrl: '/backgrounds/default.jpg'
                     }
                 });
             }
 
-            // ユーザーを作成
-            const user = await tx.user.create({
+            // ユーザーを作成または取得
+            let user;
+            const userName = data.name.trim();
+
+            // 同じ名前のユーザーが存在するかチェック
+            const existingUser = await tx.user.findFirst({
+                where: {
+                    name: userName,
+                    roomId: room.id
+                }
+            });
+
+            if (existingUser) {
+                throw new Error('この名前は既にこの部屋で使用されています');
+            }
+
+            // 新しいユーザーを作成
+            user = await tx.user.create({
                 data: {
-                    id: nanoid(10),
-                    name: data.name.trim(),
+                    id: userName,
+                    name: userName,
                     roomId: room.id
                 }
             });
@@ -58,6 +84,21 @@ export async function POST(req) {
 
     } catch (error) {
         console.error('API Error:', error);
+
+        if (error.message === 'この名前は既にこの部屋で使用されています') {
+            return NextResponse.json(
+                { error: error.message },
+                { status: 409 }
+            );
+        }
+
+        if (error.message === '指定された部屋が見つかりません') {
+            return NextResponse.json(
+                { error: error.message },
+                { status: 404 }
+            );
+        }
+
         return NextResponse.json(
             { error: error.message || 'サーバーエラーが発生しました' },
             { status: 500 }
