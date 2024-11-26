@@ -30,8 +30,8 @@ const mediaConstraints = {
         frameRate: { ideal: 30 }
     }
 };
- // 背景画像のURLを生成する関数をここに追加
- const getBackgroundUrl = (path) => {
+// 背景画像のURLを生成する関数をここに追加
+const getBackgroundUrl = (path) => {
     if (path.startsWith('http')) return path;
     return `${window.location.origin}${path}`;
 };
@@ -193,29 +193,115 @@ export default function VideoRoom({ roomId, userId }) {
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
 
+        // 既存の接続のクリーンアップ
         if (peersRef.current[targetSocketId]) {
-            peersRef.current[targetSocketId].close();
+            const existingPeer = peersRef.current[targetSocketId];
+            existingPeer.ontrack = null;
+            existingPeer.onicecandidate = null;
+            existingPeer.oniceconnectionstatechange = null;
+            existingPeer.onicegatheringstatechange = null;
+            existingPeer.onsignalingstatechange = null;
+            existingPeer.onconnectionstatechange = null;
+            existingPeer.onnegotiationneeded = null;
+            existingPeer.close();
             delete peersRef.current[targetSocketId];
         }
 
         const peer = new RTCPeerConnection(configuration);
-        let makingOffer = false;
-        let ignoreOffer = false;
-        let isSettingRemoteAnswer = false;
+        let iceCandidatesQueue = [];
+        let connectionTimeout = null;
 
+        // ICEの候補のキューを処理する関数
+        const processIceCandidateQueue = async () => {
+            while (iceCandidatesQueue.length > 0 && peer.remoteDescription) {
+                const candidate = iceCandidatesQueue.shift();
+                try {
+                    await peer.addIceCandidate(new RTCIceCandidate(candidate));
+                    console.log('Successfully added queued ICE candidate');
+                } catch (err) {
+                    console.error('Error adding queued ICE candidate:', err);
+                    updateDebugInfo({ iceCandidateError: err.message });
+                }
+            }
+        };
+
+        // 接続タイムアウトの設定
+        const setupConnectionTimeout = () => {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = setTimeout(() => {
+                if (peer.connectionState !== 'connected') {
+                    console.log(`Connection timeout for peer ${targetSocketId}`);
+                    updateDebugInfo({ connectionTimeout: targetSocketId });
+                    restartConnection();
+                }
+            }, 30000); // 30秒のタイムアウト
+        };
+
+        // 接続の再起動
+        const restartConnection = async () => {
+            try {
+                if (peer.connectionState !== 'closed') {
+                    console.log('Attempting to restart ICE');
+                    const offer = await peer.createOffer({ iceRestart: true });
+                    await peer.setLocalDescription(offer);
+                    socketRef.current?.emit('offer', {
+                        offer,
+                        to: targetSocketId
+                    });
+                    setupConnectionTimeout();
+                }
+            } catch (err) {
+                console.error('Error restarting connection:', err);
+                updateDebugInfo({ restartError: err.message });
+            }
+        };
+
+        // 接続状態の変更を監視
         peer.onconnectionstatechange = () => {
-            console.log(`Connection state for ${targetSocketId}:`, peer.connectionState);
+            console.log(`Connection state changed for ${targetSocketId}:`, peer.connectionState);
             updateDebugInfo({ [`peerState_${targetSocketId}`]: peer.connectionState });
+
+            switch (peer.connectionState) {
+                case 'connected':
+                    clearTimeout(connectionTimeout);
+                    break;
+                case 'failed':
+                    console.log('Connection failed, attempting restart...');
+                    restartConnection();
+                    break;
+                case 'closed':
+                    clearTimeout(connectionTimeout);
+                    break;
+            }
         };
 
+        // ICE接続状態の変更を監視
         peer.oniceconnectionstatechange = () => {
-            console.log(`ICE state for ${targetSocketId}:`, peer.iceConnectionState);
+            console.log(`ICE connection state for ${targetSocketId}:`, peer.iceConnectionState);
             updateDebugInfo({ [`iceState_${targetSocketId}`]: peer.iceConnectionState });
+
+            if (peer.iceConnectionState === 'failed') {
+                console.log('ICE connection failed, attempting restart...');
+                restartConnection();
+            }
         };
 
+        // ICE候補の収集状態を監視
+        peer.onicegatheringstatechange = () => {
+            console.log(`ICE gathering state for ${targetSocketId}:`, peer.iceGatheringState);
+            updateDebugInfo({ [`iceGatheringState_${targetSocketId}`]: peer.iceGatheringState });
+        };
+
+        // シグナリング状態の変更を監視
+        peer.onsignalingstatechange = () => {
+            console.log(`Signaling state for ${targetSocketId}:`, peer.signalingState);
+            updateDebugInfo({ [`signalingState_${targetSocketId}`]: peer.signalingState });
+        };
+
+        // ICE候補の処理
         peer.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
-                console.log('Sending ICE candidate:', candidate);
+                console.log('Sending ICE candidate to', targetSocketId);
                 socketRef.current.emit('ice-candidate', {
                     candidate,
                     to: targetSocketId
@@ -223,11 +309,12 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
+        // メディアトラックの処理
         peer.ontrack = (event) => {
-            console.log('ontrack event:', event);
+            console.log('Received remote track:', event);
             const remoteStream = event.streams[0];
             if (!remoteStream) {
-                console.warn('No remote stream available');
+                console.warn('No remote stream available in track event');
                 return;
             }
 
@@ -253,37 +340,61 @@ export default function VideoRoom({ roomId, userId }) {
             });
         };
 
-        // ネゴシエーション処理の改善
+        // ネゴシエーションの処理
         peer.onnegotiationneeded = async () => {
             try {
                 if (makingOfferRef.current) return;
                 makingOfferRef.current = true;
 
+                console.log('Negotiation needed, creating offer...');
                 await peer.setLocalDescription();
-
-                socketRef.current.emit('offer', {
+                socketRef.current?.emit('offer', {
                     offer: peer.localDescription,
                     to: targetSocketId
                 });
             } catch (err) {
-                console.error('Negotiation failed:', err);
+                console.error('Error during negotiation:', err);
+                updateDebugInfo({ negotiationError: err.message });
             } finally {
                 makingOfferRef.current = false;
             }
         };
 
-        // メディアストリームの追加
+        // ローカルストリームの追加
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => {
                 try {
                     peer.addTrack(track, localStreamRef.current);
                 } catch (err) {
-                    console.error('Error adding track:', err);
+                    console.error('Error adding track to peer:', err);
+                    updateDebugInfo({ trackError: err.message });
                 }
             });
         }
 
-        return peer;
+        // タイムアウトの設定
+        setupConnectionTimeout();
+
+        // 拡張されたピアオブジェクトを返す
+        return {
+            peer,
+            addIceCandidate: async (candidate) => {
+                try {
+                    if (peer.remoteDescription) {
+                        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+                        console.log('Successfully added ICE candidate');
+                    } else {
+                        console.log('Queueing ICE candidate');
+                        iceCandidatesQueue.push(candidate);
+                    }
+                } catch (err) {
+                    console.error('Error handling ICE candidate:', err);
+                    updateDebugInfo({ iceCandidateHandlingError: err.message });
+                }
+            },
+            processIceCandidateQueue,
+            restartConnection
+        };
     };
 
 

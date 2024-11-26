@@ -47,30 +47,36 @@ export async function POST(req) {
                 });
             }
 
-            // ユーザーを作成または取得
-            let user;
+            // ユーザー名を処理
             const userName = data.name.trim();
 
-            // 同じ名前のユーザーが存在するかチェック
-            const existingUser = await tx.user.findFirst({
+            // 同じroomIdとuserIdの組み合わせで既存のユーザーを検索
+            let user = await tx.user.findUnique({
                 where: {
-                    name: userName,
-                    roomId: room.id
+                    id: userName
                 }
             });
 
-            if (existingUser) {
-                throw new Error('この名前は既にこの部屋で使用されています');
+            if (user) {
+                // 既存のユーザーが存在する場合、roomIdを更新
+                user = await tx.user.update({
+                    where: {
+                        id: userName
+                    },
+                    data: {
+                        roomId: room.id
+                    }
+                });
+            } else {
+                // 新しいユーザーを作成
+                user = await tx.user.create({
+                    data: {
+                        id: userName,
+                        name: userName,
+                        roomId: room.id
+                    }
+                });
             }
-
-            // 新しいユーザーを作成
-            user = await tx.user.create({
-                data: {
-                    id: userName,
-                    name: userName,
-                    roomId: room.id
-                }
-            });
 
             return { room, user };
         });
@@ -84,13 +90,6 @@ export async function POST(req) {
 
     } catch (error) {
         console.error('API Error:', error);
-
-        if (error.message === 'この名前は既にこの部屋で使用されています') {
-            return NextResponse.json(
-                { error: error.message },
-                { status: 409 }
-            );
-        }
 
         if (error.message === '指定された部屋が見つかりません') {
             return NextResponse.json(
