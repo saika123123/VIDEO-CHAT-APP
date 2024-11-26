@@ -207,7 +207,7 @@ export default function VideoRoom({ roomId, userId }) {
             delete peersRef.current[targetSocketId];
         }
 
-        const peer = new RTCPeerConnection(configuration);
+        const peerConnection = new RTCPeerConnection(configuration);
         let iceCandidatesQueue = [];
         let connectionTimeout = null;
 
@@ -229,16 +229,16 @@ export default function VideoRoom({ roomId, userId }) {
         const setupConnectionTimeout = () => {
             clearTimeout(connectionTimeout);
             connectionTimeout = setTimeout(() => {
-                if (peer.connectionState !== 'connected') {
+                if (peerConnection.connectionState !== 'connected') {
                     console.log(`Connection timeout for peer ${targetSocketId}`);
                     updateDebugInfo({ connectionTimeout: targetSocketId });
-                    restartConnection();
+                    restartConnection(peerConnection);
                 }
-            }, 30000); // 30秒のタイムアウト
+            }, 30000);
         };
 
         // 接続の再起動
-        const restartConnection = async () => {
+        const restartConnection = async (peer) => {
             try {
                 if (peer.connectionState !== 'closed') {
                     console.log('Attempting to restart ICE');
@@ -257,17 +257,17 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         // 接続状態の変更を監視
-        peer.onconnectionstatechange = () => {
-            console.log(`Connection state changed for ${targetSocketId}:`, peer.connectionState);
-            updateDebugInfo({ [`peerState_${targetSocketId}`]: peer.connectionState });
-
-            switch (peer.connectionState) {
+        peerConnection.onconnectionstatechange = () => {
+            console.log(`Connection state changed for ${targetSocketId}:`, peerConnection.connectionState);
+            updateDebugInfo({ [`peerState_${targetSocketId}`]: peerConnection.connectionState });
+    
+            switch (peerConnection.connectionState) {
                 case 'connected':
                     clearTimeout(connectionTimeout);
                     break;
                 case 'failed':
                     console.log('Connection failed, attempting restart...');
-                    restartConnection();
+                    restartConnection(peerConnection);
                     break;
                 case 'closed':
                     clearTimeout(connectionTimeout);
@@ -276,30 +276,28 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         // ICE接続状態の変更を監視
-        peer.oniceconnectionstatechange = () => {
-            console.log(`ICE connection state for ${targetSocketId}:`, peer.iceConnectionState);
-            updateDebugInfo({ [`iceState_${targetSocketId}`]: peer.iceConnectionState });
-
-            if (peer.iceConnectionState === 'failed') {
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state for ${targetSocketId}:`, peerConnection.iceConnectionState);
+            updateDebugInfo({ [`iceState_${targetSocketId}`]: peerConnection.iceConnectionState });
+    
+            if (peerConnection.iceConnectionState === 'failed') {
                 console.log('ICE connection failed, attempting restart...');
-                restartConnection();
+                restartConnection(peerConnection);
             }
         };
 
         // ICE候補の収集状態を監視
-        peer.onicegatheringstatechange = () => {
-            console.log(`ICE gathering state for ${targetSocketId}:`, peer.iceGatheringState);
-            updateDebugInfo({ [`iceGatheringState_${targetSocketId}`]: peer.iceGatheringState });
+        peerConnection.onicegatheringstatechange = () => {
+            console.log(`ICE gathering state for ${targetSocketId}:`, peerConnection.iceGatheringState);
+            updateDebugInfo({ [`iceGatheringState_${targetSocketId}`]: peerConnection.iceGatheringState });
         };
-
-        // シグナリング状態の変更を監視
-        peer.onsignalingstatechange = () => {
-            console.log(`Signaling state for ${targetSocketId}:`, peer.signalingState);
-            updateDebugInfo({ [`signalingState_${targetSocketId}`]: peer.signalingState });
+    
+        peerConnection.onsignalingstatechange = () => {
+            console.log(`Signaling state for ${targetSocketId}:`, peerConnection.signalingState);
+            updateDebugInfo({ [`signalingState_${targetSocketId}`]: peerConnection.signalingState });
         };
-
-        // ICE候補の処理
-        peer.onicecandidate = ({ candidate }) => {
+    
+        peerConnection.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
                 console.log('Sending ICE candidate to', targetSocketId);
                 socketRef.current.emit('ice-candidate', {
@@ -310,14 +308,14 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         // メディアトラックの処理
-        peer.ontrack = (event) => {
+        peerConnection.ontrack = (event) => {
             console.log('Received remote track:', event);
             const remoteStream = event.streams[0];
             if (!remoteStream) {
                 console.warn('No remote stream available in track event');
                 return;
             }
-
+    
             setUsers(prevUsers => {
                 const existingUserIndex = prevUsers.findIndex(u => u.socketId === targetSocketId);
                 if (existingUserIndex >= 0) {
@@ -339,17 +337,18 @@ export default function VideoRoom({ roomId, userId }) {
                 }];
             });
         };
+    
 
         // ネゴシエーションの処理
-        peer.onnegotiationneeded = async () => {
+        peerConnection.onnegotiationneeded = async () => {
             try {
                 if (makingOfferRef.current) return;
                 makingOfferRef.current = true;
-
+    
                 console.log('Negotiation needed, creating offer...');
-                await peer.setLocalDescription();
+                await peerConnection.setLocalDescription();
                 socketRef.current?.emit('offer', {
-                    offer: peer.localDescription,
+                    offer: peerConnection.localDescription,
                     to: targetSocketId
                 });
             } catch (err) {
@@ -364,7 +363,7 @@ export default function VideoRoom({ roomId, userId }) {
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => {
                 try {
-                    peer.addTrack(track, localStreamRef.current);
+                    peerConnection.addTrack(track, localStreamRef.current);
                 } catch (err) {
                     console.error('Error adding track to peer:', err);
                     updateDebugInfo({ trackError: err.message });
@@ -377,7 +376,7 @@ export default function VideoRoom({ roomId, userId }) {
 
         // 拡張されたピアオブジェクトを返す
         return {
-            peer,
+            peerConnection,
             addIceCandidate: async (candidate) => {
                 try {
                     if (peer.remoteDescription) {
