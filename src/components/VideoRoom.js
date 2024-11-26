@@ -115,7 +115,7 @@ export default function VideoRoom({ roomId, userId }) {
     const isSettingRemoteAnswerRef = useRef(false);
     const reconnectionAttemptsRef = useRef({});
     const isReconnectingRef = useRef(false);
-    
+
 
     // ユーティリティ関数
     const calculateReconnectionDelay = (attempts) => {
@@ -150,19 +150,19 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
     // グリッドレイアウトの計算関数
-const getGridLayout = () => {
-    const totalParticipants = users.length + 1;  // 自分を含めた参加者数
-    
-    if (totalParticipants <= 2) {
-        return 'grid-cols-1 md:grid-cols-2';
-    } else if (totalParticipants <= 4) {
-        return 'grid-cols-2';
-    } else if (totalParticipants <= 6) {
-        return 'grid-cols-2 md:grid-cols-3';
-    } else {
-        return 'grid-cols-2 md:grid-cols-4';
-    }
-};
+    const getGridLayout = () => {
+        const totalParticipants = users.length + 1;  // 自分を含めた参加者数
+
+        if (totalParticipants <= 2) {
+            return 'grid-cols-1 md:grid-cols-2';
+        } else if (totalParticipants <= 4) {
+            return 'grid-cols-2';
+        } else if (totalParticipants <= 6) {
+            return 'grid-cols-2 md:grid-cols-3';
+        } else {
+            return 'grid-cols-2 md:grid-cols-4';
+        }
+    };
     // WebRTC接続管理
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
@@ -356,10 +356,46 @@ const getGridLayout = () => {
                     if (!desc || !desc.type) {
                         throw new Error('Invalid session description: missing type');
                     }
+
+                    // シグナリング状態をチェック
+                    const signalingState = peerConnection.signalingState;
+                    console.log(`Current signaling state before setLocalDescription: ${signalingState}`);
+
+                    // 適切な状態チェック
+                    const isValidState = (desc.type === 'offer' &&
+                        (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
+                        (desc.type === 'answer' &&
+                            (signalingState === 'have-remote-offer' || signalingState === 'have-local-pranswer'));
+
+                    if (!isValidState) {
+                        console.warn(`Invalid state for setLocalDescription: ${signalingState}, type: ${desc.type}`);
+                        return;
+                    }
+
                     await peerConnection.setLocalDescription(desc);
+                    console.log(`Successfully set local description, new state: ${peerConnection.signalingState}`);
                 } catch (err) {
                     console.error('Error setting local description:', err);
-                    updateDebugInfo({ localDescError: err.message });
+                    updateDebugInfo({
+                        localDescError: err.message,
+                        signalingState: peerConnection.signalingState,
+                        descType: desc?.type
+                    });
+
+                    // 特定のエラー状態での回復処理
+                    if (err.name === 'InvalidStateError') {
+                        try {
+                            // シグナリング状態をリセット
+                            if (peerConnection.signalingState !== 'stable') {
+                                await peerConnection.setLocalDescription({ type: "rollback" });
+                                console.log('Successfully rolled back signaling state');
+                            }
+                            // 再度ローカル記述を設定
+                            await peerConnection.setLocalDescription(desc);
+                        } catch (recoveryErr) {
+                            console.error('Failed to recover from invalid state:', recoveryErr);
+                        }
+                    }
                 }
             },
             setRemoteDescription: async (desc) => {
@@ -367,11 +403,32 @@ const getGridLayout = () => {
                     if (!desc || !desc.type) {
                         throw new Error('Invalid session description: missing type');
                     }
+
+                    // シグナリング状態をチェック
+                    const signalingState = peerConnection.signalingState;
+                    console.log(`Current signaling state before setRemoteDescription: ${signalingState}`);
+
+                    // 適切な状態チェック
+                    const isValidState = (desc.type === 'offer' &&
+                        (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
+                        (desc.type === 'answer' &&
+                            (signalingState === 'have-local-offer' || signalingState === 'have-remote-pranswer'));
+
+                    if (!isValidState) {
+                        console.warn(`Invalid state for setRemoteDescription: ${signalingState}, type: ${desc.type}`);
+                        return;
+                    }
+
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(desc));
                     await processIceCandidateQueue();
+                    console.log(`Successfully set remote description, new state: ${peerConnection.signalingState}`);
                 } catch (err) {
                     console.error('Error setting remote description:', err);
-                    updateDebugInfo({ remoteDescError: err.message });
+                    updateDebugInfo({
+                        remoteDescError: err.message,
+                        signalingState: peerConnection.signalingState,
+                        descType: desc?.type
+                    });
                 }
             },
             createAnswer: async () => {
