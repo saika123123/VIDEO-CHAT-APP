@@ -195,7 +195,7 @@ export default function VideoRoom({ roomId, userId }) {
 
         // 既存の接続のクリーンアップ
         if (peersRef.current[targetSocketId]) {
-            const existingPeer = peersRef.current[targetSocketId];
+            const existingPeer = peersRef.current[targetSocketId].peerConnection;
             existingPeer.ontrack = null;
             existingPeer.onicecandidate = null;
             existingPeer.oniceconnectionstatechange = null;
@@ -213,10 +213,10 @@ export default function VideoRoom({ roomId, userId }) {
 
         // ICEの候補のキューを処理する関数
         const processIceCandidateQueue = async () => {
-            while (iceCandidatesQueue.length > 0 && peer.remoteDescription) {
+            while (iceCandidatesQueue.length > 0 && peerConnection.remoteDescription) {
                 const candidate = iceCandidatesQueue.shift();
                 try {
-                    await peer.addIceCandidate(new RTCIceCandidate(candidate));
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                     console.log('Successfully added queued ICE candidate');
                 } catch (err) {
                     console.error('Error adding queued ICE candidate:', err);
@@ -225,25 +225,25 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // 接続タイムアウトの設定
+        // 接続のタイムアウト設定
         const setupConnectionTimeout = () => {
             clearTimeout(connectionTimeout);
             connectionTimeout = setTimeout(() => {
                 if (peerConnection.connectionState !== 'connected') {
                     console.log(`Connection timeout for peer ${targetSocketId}`);
                     updateDebugInfo({ connectionTimeout: targetSocketId });
-                    restartConnection(peerConnection);
+                    restartConnection();
                 }
             }, 30000);
         };
 
         // 接続の再起動
-        const restartConnection = async (peer) => {
+        const restartConnection = async () => {
             try {
-                if (peer.connectionState !== 'closed') {
+                if (peerConnection.connectionState !== 'closed') {
                     console.log('Attempting to restart ICE');
-                    const offer = await peer.createOffer({ iceRestart: true });
-                    await peer.setLocalDescription(offer);
+                    const offer = await peerConnection.createOffer({ iceRestart: true });
+                    await peerConnection.setLocalDescription(offer);
                     socketRef.current?.emit('offer', {
                         offer,
                         to: targetSocketId
@@ -260,14 +260,14 @@ export default function VideoRoom({ roomId, userId }) {
         peerConnection.onconnectionstatechange = () => {
             console.log(`Connection state changed for ${targetSocketId}:`, peerConnection.connectionState);
             updateDebugInfo({ [`peerState_${targetSocketId}`]: peerConnection.connectionState });
-    
+
             switch (peerConnection.connectionState) {
                 case 'connected':
                     clearTimeout(connectionTimeout);
                     break;
                 case 'failed':
                     console.log('Connection failed, attempting restart...');
-                    restartConnection(peerConnection);
+                    restartConnection();
                     break;
                 case 'closed':
                     clearTimeout(connectionTimeout);
@@ -279,7 +279,7 @@ export default function VideoRoom({ roomId, userId }) {
         peerConnection.oniceconnectionstatechange = () => {
             console.log(`ICE connection state for ${targetSocketId}:`, peerConnection.iceConnectionState);
             updateDebugInfo({ [`iceState_${targetSocketId}`]: peerConnection.iceConnectionState });
-    
+
             if (peerConnection.iceConnectionState === 'failed') {
                 console.log('ICE connection failed, attempting restart...');
                 restartConnection(peerConnection);
@@ -291,12 +291,12 @@ export default function VideoRoom({ roomId, userId }) {
             console.log(`ICE gathering state for ${targetSocketId}:`, peerConnection.iceGatheringState);
             updateDebugInfo({ [`iceGatheringState_${targetSocketId}`]: peerConnection.iceGatheringState });
         };
-    
+
         peerConnection.onsignalingstatechange = () => {
             console.log(`Signaling state for ${targetSocketId}:`, peerConnection.signalingState);
             updateDebugInfo({ [`signalingState_${targetSocketId}`]: peerConnection.signalingState });
         };
-    
+
         peerConnection.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
                 console.log('Sending ICE candidate to', targetSocketId);
@@ -315,7 +315,7 @@ export default function VideoRoom({ roomId, userId }) {
                 console.warn('No remote stream available in track event');
                 return;
             }
-    
+
             setUsers(prevUsers => {
                 const existingUserIndex = prevUsers.findIndex(u => u.socketId === targetSocketId);
                 if (existingUserIndex >= 0) {
@@ -337,14 +337,14 @@ export default function VideoRoom({ roomId, userId }) {
                 }];
             });
         };
-    
+
 
         // ネゴシエーションの処理
         peerConnection.onnegotiationneeded = async () => {
             try {
                 if (makingOfferRef.current) return;
                 makingOfferRef.current = true;
-    
+
                 console.log('Negotiation needed, creating offer...');
                 await peerConnection.setLocalDescription();
                 socketRef.current?.emit('offer', {
@@ -379,8 +379,8 @@ export default function VideoRoom({ roomId, userId }) {
             peerConnection,
             addIceCandidate: async (candidate) => {
                 try {
-                    if (peer.remoteDescription) {
-                        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+                    if (peerConnection.remoteDescription) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                         console.log('Successfully added ICE candidate');
                     } else {
                         console.log('Queueing ICE candidate');
