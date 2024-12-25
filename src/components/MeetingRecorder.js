@@ -406,70 +406,149 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         };
     }, []);
 
+    // MeetingRecorder.js のreturn部分を修正
     return (
-        <div className="fixed right-4 top-20 w-80 bg-white/90 rounded-lg shadow-lg p-4 max-h-[calc(100vh-120px)] overflow-auto">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold">議事録</h3>
-                <button
-                    onClick={isRecording ? () => stopRecording(true) : startRecording}
-                    disabled={!isAudioOn || isSaving}
-                    className={`
-                        px-4 py-2 rounded-lg 
-                        transition-all duration-200 ease-in-out
-                        flex items-center gap-2
-                        ${isRecording
-                            ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }
-                        ${(!isAudioOn || isSaving) && 'opacity-50 cursor-not-allowed'}
-                    `}
-                >
-                    {isSaving ? (
-                        <span>保存中...</span>
-                    ) : (
-                        <span>{isRecording ? '録音停止' : '録音開始'}</span>
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+            {/* ヘッダーと録音コントロール */}
+            <div className="bg-blue-600 p-6">
+                <div className="flex flex-col items-stretch gap-4">
+                    <h3 className="text-2xl font-bold text-white text-center">音声の記録</h3>
+                    
+                    <button
+                        onClick={isRecording ? () => stopRecording(true) : startRecording}
+                        disabled={!isAudioOn || isSaving}
+                        className={`
+                            w-full px-6 py-4 rounded-xl
+                            text-xl font-bold
+                            flex items-center justify-center gap-3
+                            transition-all duration-200
+                            ${isRecording
+                                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                                : 'bg-white text-blue-600 hover:bg-blue-50'
+                            }
+                            ${(!isAudioOn || isSaving) && 'opacity-50 cursor-not-allowed'}
+                            shadow-lg
+                        `}
+                    >
+                        {isSaving ? (
+                            <>
+                                <div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                <span>保存しています...</span>
+                            </>
+                        ) : (
+                            <>
+                                {isRecording ? (
+                                    <>
+                                        <div className="w-4 h-4 bg-white rounded-full animate-pulse"></div>
+                                        <span>録音を停止する</span>
+                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                                            <rect x="6" y="6" width="12" height="12" />
+                                        </svg>
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                                            <circle cx="12" cy="12" r="6" />
+                                        </svg>
+                                        <span>ここを押して録音開始</span>
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </button>
+    
+                    {!isAudioOn && (
+                        <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-800 p-4 rounded-xl text-lg text-center">
+                            <div className="flex items-center justify-center gap-2">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                                    />
+                                </svg>
+                                <span>マイクがオフになっています</span>
+                            </div>
+                        </div>
                     )}
-                </button>
+                </div>
             </div>
-
+    
+            {/* エラーメッセージ */}
             {error && (
-                <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-sm">
-                    {error}
+                <div className="m-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-lg">
+                    <div className="flex items-center gap-2">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                        </svg>
+                        {error}
+                    </div>
                 </div>
             )}
-
+    
+            {/* 録音中の状態表示 */}
             {isRecording && (
-                <div className="mb-4 p-2 bg-green-100 text-green-700 rounded text-sm">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                        録音中...
+                <div className="mx-4 mt-4 p-4 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl">
+                    <div className="flex items-center gap-2 text-lg font-bold">
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                        <span>録音中です</span>
                     </div>
                     {recordingInitiator && (
-                        <div className="text-xs mt-1">
-                            開始者: {recordingInitiator}
+                        <div className="mt-3 text-lg">
+                            <span className="font-bold">開始した人:</span> {recordingInitiator}
                         </div>
                     )}
-                    <div className="text-xs mt-1">
-                        処理待ち: {pendingSpeechesRef.current.length} 件
+                    <div className="mt-2 text-lg">
+                        <span className="font-bold">処理待ち:</span> {pendingSpeechesRef.current.length} 件
                     </div>
                 </div>
             )}
-
-            <div className="space-y-4">
-                {transcript.map((item, index) => (
-                    <div key={item.id || index} className="bg-white rounded p-3 shadow-sm">
-                        <div className="flex justify-between text-sm text-gray-500 mb-1">
-                            <span>{item.userName}</span>
-                            <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+    
+            {/* 議事録一覧 */}
+            <div className="p-4">
+                <div className="font-bold text-xl mb-4 text-gray-700">記録された会話</div>
+                <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
+                    {transcript.map((item, index) => (
+                        <div 
+                            key={item.id || index} 
+                            className="bg-gray-50 rounded-xl p-4 shadow-sm border border-gray-100"
+                        >
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-lg font-bold text-gray-700">
+                                    {item.userName}
+                                </span>
+                                <span className="text-base text-gray-600">
+                                    {new Date(item.timestamp).toLocaleTimeString('ja-JP', {
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    })}
+                                </span>
+                            </div>
+                            <p className="text-lg text-gray-800 leading-relaxed">
+                                {item.content}
+                            </p>
                         </div>
-                        <p className="text-gray-700">{item.content}</p>
-                    </div>
-                ))}
-                {transcript.length === 0 && !isRecording && (
-                    <p className="text-gray-500 text-center text-sm">
-                        録音を開始すると発言が記録されます
-                    </p>
-                )}
+                    ))}
+    
+                    {/* 記録がない場合の表示 */}
+                    {transcript.length === 0 && !isRecording && (
+                        <div className="text-center py-8 bg-gray-50 rounded-xl">
+                            <div className="text-gray-400">
+                                <svg className="w-16 h-16 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                    />
+                                </svg>
+                                <p className="text-xl font-bold mb-2">
+                                    まだ会話は記録されていません
+                                </p>
+                                <p className="text-lg">
+                                    上の「録音開始」ボタンを<br />押してください
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

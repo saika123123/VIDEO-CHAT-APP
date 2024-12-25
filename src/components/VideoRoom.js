@@ -12,7 +12,7 @@ const configuration = {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         {
-            // 実際のTURNサーバー情報に置き換える必要があります
+            // 実際のTURNサーバー情報に置き換える必要あり
             urls: 'turn:your-turn-server.com',
             username: 'username',
             credential: 'credential'
@@ -790,15 +790,24 @@ export default function VideoRoom({ roomId, userId }) {
             }}
         >
             {/* ヘッダー部分 */}
-            <div className="fixed top-4 left-4 z-10 flex items-center gap-4">
-                <div className="bg-black/50 text-white px-4 py-2 rounded-lg">
-                    参加者: {users.length + 1}人
+            <div className="fixed top-6 left-6 z-10 flex items-center gap-6">
+                {/* 参加者数 */}
+                <div className="bg-white/90 text-gray-800 px-6 py-4 rounded-xl shadow-lg">
+                    <div className="text-xl font-bold">
+                        参加者: {users.length + 1}人
+                    </div>
                 </div>
+    
+                {/* 招待URLコピーボタン */}
                 <button
                     onClick={copyInviteLink}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    className="
+                        bg-blue-600 text-white px-6 py-4 rounded-xl shadow-lg 
+                        hover:bg-blue-700 transition-colors
+                        flex items-center gap-3 text-xl font-bold
+                    "
                 >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                             d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2"
                         />
@@ -806,11 +815,11 @@ export default function VideoRoom({ roomId, userId }) {
                     <span>{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
                 </button>
             </div>
-
+    
             {/* ビデオグリッド */}
-            <div className={`grid ${getGridLayout()} gap-4 mt-16 max-w-7xl mx-auto`}>
+            <div className={`grid ${getGridLayout()} gap-6 mt-24 max-w-7xl mx-auto`}>
                 {/* ローカルビデオ */}
-                <div className="relative aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg">
+                <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg">
                     <video
                         ref={ref => {
                             if (ref) {
@@ -822,24 +831,24 @@ export default function VideoRoom({ roomId, userId }) {
                         muted
                         className="w-full h-full object-cover"
                     />
-                    <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                        <div className="bg-black/50 px-2 py-1 rounded text-white">
+                    <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                        <div className="bg-black/70 px-4 py-2 rounded-lg text-white text-lg">
                             あなた ({userName})
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-2">
                             {!isAudioOn && (
-                                <div className="bg-red-500/80 px-2 py-1 rounded-lg text-white text-sm flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="bg-red-500 px-4 py-2 rounded-lg text-white text-lg flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                             d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
                                         />
                                     </svg>
-                                    ミュート
+                                    ミュート中
                                 </div>
                             )}
                             {!isCameraOn && (
-                                <div className="bg-red-500/80 px-2 py-1 rounded-lg text-white text-sm flex items-center gap-1">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="bg-red-500 px-4 py-2 rounded-lg text-white text-lg flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                             d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
                                         />
@@ -850,10 +859,10 @@ export default function VideoRoom({ roomId, userId }) {
                         </div>
                     </div>
                 </div>
-
+    
                 {/* リモートビデオ */}
                 {users.map(user => (
-                    <div key={user.socketId} className="relative aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg">
+                    <div key={user.socketId} className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg">
                         <video
                             ref={ref => {
                                 if (ref && user.stream) {
@@ -864,24 +873,24 @@ export default function VideoRoom({ roomId, userId }) {
                             playsInline
                             className="w-full h-full object-cover"
                         />
-                        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                            <div className="bg-black/50 px-2 py-1 rounded text-white">
+                        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                            <div className="bg-black/70 px-4 py-2 rounded-lg text-white text-lg">
                                 {user.userName || '接続中...'}
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-2">
                                 {user.isAudioOff && (
-                                    <div className="bg-red-500/80 px-2 py-1 rounded-lg text-white text-sm flex items-center gap-1">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <div className="bg-red-500 px-4 py-2 rounded-lg text-white text-lg flex items-center gap-2">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                 d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
                                             />
                                         </svg>
-                                        ミュート
+                                        ミュート中
                                     </div>
                                 )}
                                 {user.isCameraOff && (
-                                    <div className="bg-red-500/80 px-2 py-1 rounded-lg text-white text-sm flex items-center gap-1">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <div className="bg-red-500 px-4 py-2 rounded-lg text-white text-lg flex items-center gap-2">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                 d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
                                             />
@@ -894,97 +903,153 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
                 ))}
             </div>
-
+    
             {/* コントロールパネル */}
-            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-20">
-                <div className="flex items-center gap-4 bg-black/50 px-6 py-3 rounded-full">
-                    <button
-                        onClick={toggleCamera}
-                        className={`p-3 rounded-full ${isCameraOn ? 'bg-blue-600' : 'bg-red-600'} text-white hover:opacity-90 transition-opacity`}
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                            />
-                        </svg>
-                    </button>
-
-                    <button
-                        onClick={toggleAudio}
-                        className={`p-3 rounded-full ${isAudioOn ? 'bg-blue-600' : 'bg-red-600'} text-white hover:opacity-90 transition-opacity`}
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                            />
-                        </svg>
-                    </button>
-
-                    <button
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="p-3 rounded-full bg-gray-600 text-white hover:opacity-90 transition-opacity"
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                            />
-                        </svg>
-                    </button>
-
-                    <div className="w-px h-8 bg-gray-400/50 mx-2" />
-
-                    <button
-                        onClick={leaveRoom}
-                        className="p-3 rounded-full bg-red-600 text-white hover:opacity-90 transition-opacity"
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                            />
-                        </svg>
-                    </button>
+            <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20">
+                <div className="flex items-center gap-6 bg-white/90 px-8 py-6 rounded-2xl shadow-lg">
+                    {/* カメラボタン */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={toggleCamera}
+                            className={`
+                                p-6 rounded-full 
+                                ${isCameraOn ? 'bg-blue-600' : 'bg-red-600'} 
+                                text-white hover:opacity-90 transition-opacity
+                                shadow-lg
+                                flex flex-col items-center gap-2
+                            `}
+                            aria-label={isCameraOn ? 'カメラをオフにする' : 'カメラをオンにする'}
+                        >
+                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="mt-2 text-lg font-bold">
+                            {isCameraOn ? 'カメラを消す' : 'カメラをつける'}
+                        </span>
+                    </div>
+    
+                    {/* マイクボタン */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={toggleAudio}
+                            className={`
+                                p-6 rounded-full
+                                ${isAudioOn ? 'bg-blue-600' : 'bg-red-600'}
+                                text-white hover:opacity-90 transition-opacity
+                                shadow-lg
+                                flex flex-col items-center gap-2
+                            `}
+                            aria-label={isAudioOn ? 'マイクをオフにする' : 'マイクをオンにする'}
+                        >
+                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="mt-2 text-lg font-bold">
+                            {isAudioOn ? 'マイクを消す' : 'マイクをつける'}
+                        </span>
+                    </div>
+    
+                    {/* 背景設定ボタン */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={() => setShowSettings(!showSettings)}
+                            className="
+                                p-6 rounded-full bg-gray-600 text-white 
+                                hover:opacity-90 transition-opacity shadow-lg
+                                flex flex-col items-center gap-2
+                            "
+                        >
+                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="mt-2 text-lg font-bold">背景を変える</span>
+                    </div>
+    
+                    {/* 区切り線 */}
+                    <div className="h-24 w-px bg-gray-300 mx-4" />
+    
+                    {/* 退出ボタン */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={() => {
+                                if (window.confirm('ビデオ通話を終了しますか？')) {
+                                    leaveRoom();
+                                }
+                            }}
+                            className="
+                                p-6 rounded-full bg-red-600 text-white 
+                                hover:opacity-90 transition-opacity shadow-lg
+                                flex flex-col items-center gap-2
+                            "
+                            aria-label="ビデオ通話を終了する"
+                        >
+                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                                />
+                            </svg>
+                        </button>
+                        <span className="mt-2 text-lg font-bold text-red-600">退出する</span>
+                    </div>
                 </div>
             </div>
-
-            {/* 背景選択 */}
+    
+            {/* 背景選択パネル */}
             {showSettings && (
-                <div className="fixed bottom-24 right-4 z-10">
+                <div className="fixed bottom-36 right-6 z-10">
                     <BackgroundSelector
                         onSelect={setBackground}
                         currentBackground={background}
                     />
                 </div>
             )}
+    
             {/* 議事録コンポーネント */}
-            <MeetingRecorder
-                roomId={roomId}
-                userId={userId}
-                userName={userName}
-                isAudioOn={isAudioOn}
-                users={users}
-                socketRef={socketRef}
-            />
-            {/* 招待案内 */}
+            <div className="fixed right-6 top-24 w-96 bg-white rounded-2xl shadow-lg overflow-hidden">
+                <MeetingRecorder
+                    roomId={roomId}
+                    userId={userId}
+                    userName={userName}
+                    isAudioOn={isAudioOn}
+                    users={users}
+                    socketRef={socketRef}
+                />
+            </div>
+    
+            {/* 招待案内（参加者がいない場合）
             {users.length === 0 && (
-                <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-white/90 px-6 py-3 rounded-lg shadow-lg">
-                    <p className="text-center text-gray-800">
-                        右上の「招待URLをコピー」ボタンをクリックして、他の参加者を招待できます
+                <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-white/90 px-8 py-6 rounded-xl shadow-lg">
+                    <p className="text-center text-xl text-gray-800">
+                        <span className="font-bold">「招待URLをコピー」</span>ボタンをクリックして、<br />
+                        他の参加者を招待できます
                     </p>
                 </div>
-            )}
-
-            {/* デバッグ情報（開発環境のみ） */}
-            {process.env.NODE_ENV === 'development' && (
-                <div className="fixed bottom-4 right-4 bg-black/50 text-white text-xs p-2 rounded-lg">
+            )} */}
+    
+             {/* デバッグ情報（開発環境のみ） */}
+        {/* {process.env.NODE_ENV === 'development' && (
+            <div className="fixed bottom-4 right-4 bg-black/50 text-white text-xs p-4 rounded-xl">
+                <div className="space-y-1">
                     <div>Room ID: {roomId}</div>
                     <div>User ID: {userId}</div>
                     <div>User Name: {userName}</div>
                     <div>Connected Users: {users.length}</div>
                     <div>Camera: {isCameraOn ? 'ON' : 'OFF'}</div>
                     <div>Audio: {isAudioOn ? 'ON' : 'OFF'}</div>
+                    <div>Connection Status: {connectionStatus}</div>
                     <div>Peer Connections: {Object.keys(peersRef.current).length}</div>
                 </div>
-            )}
-        </div>
-    );
+            </div>
+        )} */}
+    </div>
+);
 }

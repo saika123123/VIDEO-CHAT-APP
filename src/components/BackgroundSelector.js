@@ -95,7 +95,7 @@ export default function BackgroundSelector({ onSelect, currentBackground }) {
                 ))}
             </div>
 
-            {process.env.NODE_ENV === 'development' && (
+            {/* {process.env.NODE_ENV === 'development' && (
                 <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
                     <div>Current Background: {currentBackground}</div>
                     <div>Loaded Status:</div>
@@ -105,7 +105,7 @@ export default function BackgroundSelector({ onSelect, currentBackground }) {
                         </div>
                     ))}
                 </div>
-            )}
+            )} */}
         </div>
     );
 }
