@@ -799,7 +799,7 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
     
                 {/* 招待URLコピーボタン */}
-                <button
+                {/* <button
                     onClick={copyInviteLink}
                     className="
                         bg-blue-600 text-white px-6 py-4 rounded-xl shadow-lg 
@@ -813,7 +813,7 @@ export default function VideoRoom({ roomId, userId }) {
                         />
                     </svg>
                     <span>{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
-                </button>
+                </button> */}
             </div>
     
             {/* ビデオグリッド */}
@@ -1014,16 +1014,16 @@ export default function VideoRoom({ roomId, userId }) {
             )}
     
             {/* 議事録コンポーネント */}
-            <div className="fixed right-6 top-24 w-96 bg-white rounded-2xl shadow-lg overflow-hidden">
-                <MeetingRecorder
-                    roomId={roomId}
-                    userId={userId}
-                    userName={userName}
-                    isAudioOn={isAudioOn}
-                    users={users}
-                    socketRef={socketRef}
-                />
-            </div>
+            <div className="fixed right-4 top-24 w-64 lg:w-72 bg-white/90 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:w-96">
+            <MeetingRecorder
+                roomId={roomId}
+                userId={userId}
+                userName={userName}
+                isAudioOn={isAudioOn}
+                users={users}
+                socketRef={socketRef}
+            />
+        </div>
     
             {/* 招待案内（参加者がいない場合）
             {users.length === 0 && (
