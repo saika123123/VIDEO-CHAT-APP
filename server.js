@@ -6,8 +6,8 @@ const cors = require('cors');
 
 const app = express();
 const options = {
-  key: fs.readFileSync('/etc/nginx/ssl/nginx.key'),
-  cert: fs.readFileSync('/etc/nginx/ssl/nginx.crt')
+    key: fs.readFileSync('/etc/nginx/ssl/nginx.key'),
+    cert: fs.readFileSync('/etc/nginx/ssl/nginx.crt')
 };
 
 const server = https.createServer(options, app);
@@ -15,11 +15,12 @@ const server = https.createServer(options, app);
 app.use(cors());
 
 const io = new Server(server, {
-  cors: {
-    origin: "https://192.168.200.170",
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+    path: '/yoriai/socket.io/',
+    cors: {
+        origin: "https://192.168.200.170",
+        methods: ["GET", "POST"],
+        credentials: true
+    }
 });
 
 // ルームごとの参加者を管理するMap
