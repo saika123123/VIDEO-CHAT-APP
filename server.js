@@ -1,28 +1,25 @@
 const express = require('express');
-const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
+const options = {
+  key: fs.readFileSync('/etc/nginx/ssl/nginx.key'),
+  cert: fs.readFileSync('/etc/nginx/ssl/nginx.crt')
+};
 
-// CORSの設定
-app.use(cors({
-    origin: "http://localhost:3000",
+const server = https.createServer(options, app);
+
+app.use(cors());
+
+const io = new Server(server, {
+  cors: {
+    origin: "https://192.168.200.170",
     methods: ["GET", "POST"],
     credentials: true
-}));
-
-const server = http.createServer(app);
-
-// Socket.IOサーバーの設定
-const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:3000",
-        methods: ["GET", "POST"],
-        credentials: true
-    },
-    pingTimeout: 60000,
-    pingInterval: 25000
+  }
 });
 
 // ルームごとの参加者を管理するMap
@@ -160,7 +157,7 @@ server.on('error', (error) => {
 
 // サーバーの起動
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 });
 

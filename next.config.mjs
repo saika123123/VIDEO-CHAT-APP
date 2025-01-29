@@ -1,22 +1,33 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    experimental: {
-        serverActions: false
-    },
-    webpack: (config) => {
-        config.externals = [...config.externals, 'prisma', 'prisma/client'];
-        return config;
-    },
-    // 静的ファイルの設定を追加
-    images: {
-        domains: ['localhost'],
-    },
-    // publicディレクトリの設定
-    assetPrefix: '',
-    // public directory configuration
-    publicRuntimeConfig: {
-        staticFolder: '/public',
-    }
+  assetPrefix: "/yoriai",
+  experimental: {
+    serverActions: false
+  },
+  webpack: (config) => {
+    config.externals = [...config.externals, 'prisma', 'prisma/client'];
+    return config;
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/yoriai/api/:path*",
+        destination: "/api/:path*",
+      },
+      {
+        source: "/yoriai/_next/:path*",
+        destination: "/_next/:path*",
+      },
+      {
+        source: "/yoriai/socket.io/:path*",
+        destination: "/socket.io/:path*",
+      },
+      {
+        source: "/yoriai/:path*",
+        destination: "/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

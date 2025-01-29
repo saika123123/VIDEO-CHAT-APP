@@ -475,17 +475,18 @@ export default function VideoRoom({ roomId, userId }) {
             delete peersRef.current[targetSocketId];
         }
     };
-
+    
+    
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
-        socketRef.current = io('http://localhost:3001', {
-            query: { roomId, userId, userName: name },
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
-        });
 
+        socketRef.current = io('https://192.168.200.170:3001', {
+      path: '/socket.io/',
+      transports: ['websocket', 'polling'],
+      secure: true,
+      rejectUnauthorized: false,
+      query: { roomId, userId, userName: name }
+    });
         socketRef.current.on('connect', () => {
             console.log('Connected to signaling server');
             setConnectionStatus('connected');

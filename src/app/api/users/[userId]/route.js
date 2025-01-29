@@ -14,10 +14,14 @@ export async function GET(request, context) {
         });
 
         if (!user) {
-            return NextResponse.json(
-                { error: 'ユーザーが見つかりません' },
-                { status: 404 }
-            );
+            // ユーザーが見つからない場合は、新しいユーザーを作成
+            const newUser = await prisma.user.create({
+                data: {
+                    id: userId,
+                    name: userId // ユーザーIDをそのまま名前として使用
+                }
+            });
+            return NextResponse.json({ name: newUser.name });
         }
 
         return NextResponse.json({ name: user.name });
