@@ -17,7 +17,7 @@ export function middleware(request) {
         // パスが/backgrounds/で始まらない場合のみリダイレクトを行う
         if (!userId && !request.nextUrl.pathname.startsWith('/backgrounds/')) {
             const roomId = request.nextUrl.pathname.slice(1);
-            return NextResponse.redirect(new URL(`/?room=${roomId}`, request.url));
+            return NextResponse.redirect(new URL(`/yoriai/?room=${roomId}`, request.url));
         }
     }
 

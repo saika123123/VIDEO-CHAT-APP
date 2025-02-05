@@ -10,7 +10,7 @@ export default function RoomClient({ roomId }) {
 
     useEffect(() => {
         if (!userId) {
-            router.push('/');
+            router.push('/yoriai');
             return;
         }
     }, [userId, router]);
