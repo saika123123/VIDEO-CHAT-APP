@@ -17,7 +17,7 @@ app.use(cors());
 const io = new Server(server, {
     path: '/yoriai/socket.io/',
     cors: {
-        origin: "https://es4.eedept.kobe-u.ac.jp",
+        origin: ["https://es4.eedept.kobe-u.ac.jp", "https://192.168.200.170"], 
         methods: ["GET", "POST"],
         credentials: true
     }
