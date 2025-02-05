@@ -480,7 +480,7 @@ export default function VideoRoom({ roomId, userId }) {
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
 
-        socketRef.current = io('https://192.168.200.170:3001', {
+        socketRef.current = io('wss://es4.eedept.kobe-u.ac.jp/yoriai', {
             path: '/socket.io/',
             transports: ['websocket', 'polling'],
             secure: true,
