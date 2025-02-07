@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  assetPrefix: "/yoriai",
+  basePath: '/yoriai',
+  assetPrefix: '/yoriai',
   experimental: {
     serverActions: false
   },
