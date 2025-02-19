@@ -133,7 +133,7 @@ export default function VideoRoom({ roomId, userId }) {
 
     const fetchUserName = async () => {
         try {
-            const response = await fetch(`/api/users/${userId}`);
+            const response = await fetch(`/yoriai/api/users/${userId}`);
             const data = await response.json();
 
             if (response.ok && data.name) {
@@ -475,18 +475,18 @@ export default function VideoRoom({ roomId, userId }) {
             delete peersRef.current[targetSocketId];
         }
     };
-    
-    
+
+
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
 
         socketRef.current = io('https://192.168.200.170:3001', {
-      path: '/socket.io/',
-      transports: ['websocket', 'polling'],
-      secure: true,
-      rejectUnauthorized: false,
-      query: { roomId, userId, userName: name }
-    });
+            path: '/yoriai/socket.io/',  // yoriai パスを追加
+            transports: ['websocket', 'polling'],
+            secure: true,
+            rejectUnauthorized: false,
+            query: { roomId, userId, userName: name }
+        });
         socketRef.current.on('connect', () => {
             console.log('Connected to signaling server');
             setConnectionStatus('connected');
@@ -658,7 +658,7 @@ export default function VideoRoom({ roomId, userId }) {
             }
 
             // ホームページへリダイレクト
-            window.location.href = '/';
+            window.location.href = '/yoriai/';
         } catch (error) {
             console.error('Error during room exit:', error);
             // エラーが発生してもホームページへ移動
@@ -734,7 +734,7 @@ export default function VideoRoom({ roomId, userId }) {
 
     // 招待URLのコピー機能
     const copyInviteLink = () => {
-        const url = `${window.location.origin}/?room=${roomId}`;
+        const url = `${window.location.origin}/yoriai/?room=${roomId}`;
         navigator.clipboard.writeText(url).then(() => {
             setShowCopied(true);
             setTimeout(() => setShowCopied(false), 2000);
@@ -798,7 +798,7 @@ export default function VideoRoom({ roomId, userId }) {
                         参加者: {users.length + 1}人
                     </div>
                 </div>
-    
+
                 {/* 招待URLコピーボタン */}
                 <button
                     onClick={copyInviteLink}
@@ -816,7 +816,7 @@ export default function VideoRoom({ roomId, userId }) {
                     <span>{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
                 </button>
             </div>
-    
+
             {/* ビデオグリッド */}
             <div className={`grid ${getGridLayout()} gap-6 mt-24 max-w-7xl mx-auto`}>
                 {/* ローカルビデオ */}
@@ -860,7 +860,7 @@ export default function VideoRoom({ roomId, userId }) {
                         </div>
                     </div>
                 </div>
-    
+
                 {/* リモートビデオ */}
                 {users.map(user => (
                     <div key={user.socketId} className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg">
@@ -904,7 +904,7 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
                 ))}
             </div>
-    
+
             {/* コントロールパネル */}
             <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-20">
                 <div className="flex items-center gap-6 bg-white/90 px-8 py-6 rounded-2xl shadow-lg">
@@ -931,7 +931,7 @@ export default function VideoRoom({ roomId, userId }) {
                             {isCameraOn ? 'カメラを消す' : 'カメラをつける'}
                         </span>
                     </div>
-    
+
                     {/* マイクボタン */}
                     <div className="flex flex-col items-center">
                         <button
@@ -955,7 +955,7 @@ export default function VideoRoom({ roomId, userId }) {
                             {isAudioOn ? 'マイクを消す' : 'マイクをつける'}
                         </span>
                     </div>
-    
+
                     {/* 背景設定ボタン */}
                     <div className="flex flex-col items-center">
                         <button
@@ -974,10 +974,10 @@ export default function VideoRoom({ roomId, userId }) {
                         </button>
                         <span className="mt-2 text-lg font-bold">背景を変える</span>
                     </div>
-    
+
                     {/* 区切り線 */}
                     <div className="h-24 w-px bg-gray-300 mx-4" />
-    
+
                     {/* 退出ボタン */}
                     <div className="flex flex-col items-center">
                         <button
@@ -1003,7 +1003,7 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
                 </div>
             </div>
-    
+
             {/* 背景選択パネル */}
             {showSettings && (
                 <div className="fixed bottom-36 right-6 z-10">
@@ -1013,7 +1013,7 @@ export default function VideoRoom({ roomId, userId }) {
                     />
                 </div>
             )}
-    
+
             {/* 議事録コンポーネント */}
             <div className="fixed right-6 top-24 w-96 bg-white rounded-2xl shadow-lg overflow-hidden">
                 <MeetingRecorder
@@ -1025,7 +1025,7 @@ export default function VideoRoom({ roomId, userId }) {
                     socketRef={socketRef}
                 />
             </div>
-    
+
             {/* 招待案内（参加者がいない場合）
             {users.length === 0 && (
                 <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-white/90 px-8 py-6 rounded-xl shadow-lg">
@@ -1035,9 +1035,9 @@ export default function VideoRoom({ roomId, userId }) {
                     </p>
                 </div>
             )} */}
-    
-             {/* デバッグ情報（開発環境のみ） */}
-        {/* {process.env.NODE_ENV === 'development' && (
+
+            {/* デバッグ情報（開発環境のみ） */}
+            {/* {process.env.NODE_ENV === 'development' && (
             <div className="fixed bottom-4 right-4 bg-black/50 text-white text-xs p-4 rounded-xl">
                 <div className="space-y-1">
                     <div>Room ID: {roomId}</div>
@@ -1051,6 +1051,6 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
             </div>
         )} */}
-    </div>
-);
+        </div>
+    );
 }

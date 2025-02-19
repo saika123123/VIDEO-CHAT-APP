@@ -42,7 +42,7 @@ export async function POST(req) {
                 room = await tx.room.create({
                     data: {
                         id: roomId,
-                        backgroundUrl: '/backgrounds/default.jpg'
+                        backgroundUrl: '/yoriai/backgrounds/default.jpg'
                     }
                 });
             }

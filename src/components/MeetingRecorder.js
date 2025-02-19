@@ -80,7 +80,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             currentSpeech = pendingSpeechesRef.current[0];
             logDebug('Processing speech:', currentSpeech);
 
-            const response = await fetch('/api/speeches', {
+            const response = await fetch('/yoriai/api/speeches', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -271,7 +271,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             }
 
             // ミーティングの作成
-            const response = await fetch('/api/meetings', {
+            const response = await fetch('/yoriai/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId })
@@ -360,7 +360,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
 
             // ミーティングを終了（initiatorの場合のみ）
             if (emitEvent) {
-                const response = await fetch(`/api/meetings/${meetingIdRef.current}`, {
+                const response = await fetch(`/yoriai/api/meetings/${meetingIdRef.current}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -413,7 +413,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             <div className="bg-blue-600 p-6">
                 <div className="flex flex-col items-stretch gap-4">
                     <h3 className="text-2xl font-bold text-white text-center">音声の記録</h3>
-                    
+
                     <button
                         onClick={isRecording ? () => stopRecording(true) : startRecording}
                         disabled={!isAudioOn || isSaving}
@@ -456,7 +456,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                             </>
                         )}
                     </button>
-    
+
                     {!isAudioOn && (
                         <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-800 p-4 rounded-xl text-lg text-center">
                             <div className="flex items-center justify-center gap-2">
@@ -471,7 +471,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                     )}
                 </div>
             </div>
-    
+
             {/* エラーメッセージ */}
             {error && (
                 <div className="m-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-lg">
@@ -485,7 +485,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                     </div>
                 </div>
             )}
-    
+
             {/* 録音中の状態表示 */}
             {isRecording && (
                 <div className="mx-4 mt-4 p-4 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl">
@@ -503,14 +503,14 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                     </div>
                 </div>
             )}
-    
+
             {/* 議事録一覧 */}
             <div className="p-4">
                 <div className="font-bold text-xl mb-4 text-gray-700">記録された会話</div>
                 <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
                     {transcript.map((item, index) => (
-                        <div 
-                            key={item.id || index} 
+                        <div
+                            key={item.id || index}
                             className="bg-gray-50 rounded-xl p-4 shadow-sm border border-gray-100"
                         >
                             <div className="flex justify-between items-center mb-2">
@@ -529,7 +529,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                             </p>
                         </div>
                     ))}
-    
+
                     {/* 記録がない場合の表示 */}
                     {transcript.length === 0 && !isRecording && (
                         <div className="text-center py-8 bg-gray-50 rounded-xl">
