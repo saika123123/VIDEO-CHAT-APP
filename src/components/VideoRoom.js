@@ -133,7 +133,7 @@ export default function VideoRoom({ roomId, userId }) {
 
     const fetchUserName = async () => {
         try {
-            const response = await fetch(`/api/users/${userId}`);
+            const response = await fetch(`/yoriai/api/users/${userId}`);
             const data = await response.json();
 
             if (response.ok && data.name) {
