@@ -491,7 +491,7 @@ export default function VideoRoom({ roomId, userId }) {
 
         socketRef.current = io(`${window.location.protocol}//${host}`, {
             path: '/yoriai/socket.io/',
-            transports: ['websocket', 'polling'],
+            transports: ['polling'],
             secure: true,
             rejectUnauthorized: false,
             query: { roomId, userId, userName: name }
