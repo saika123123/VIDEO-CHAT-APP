@@ -45,8 +45,13 @@ const RECONNECTION_CONFIG = {
 };
 
 // 背景画像のURLを生成する関数
+// 背景画像のURLを生成する関数
 const getBackgroundUrl = (path) => {
     if (path.startsWith('http')) return path;
+    // パスに /yoriai/ が含まれていない場合は追加
+    if (!path.startsWith('/yoriai/')) {
+        return `${window.location.origin}/yoriai${path}`;
+    }
     return `${window.location.origin}${path}`;
 };
 
@@ -480,11 +485,11 @@ export default function VideoRoom({ roomId, userId }) {
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
 
-        const socketURL = window.location.hostname === 'localhost'
-            ? 'https://localhost:3001'
-            : `${window.location.protocol}//${window.location.host}/yoriai`;
+        // ホストとプロトコルを取得
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
 
-        socketRef.current = io(socketURL, {
+        socketRef.current = io(`${window.location.protocol}//${host}`, {
             path: '/yoriai/socket.io/',
             transports: ['websocket', 'polling'],
             secure: true,
