@@ -6,10 +6,11 @@ export default function BackgroundSelector({ onSelect, currentBackground }) {
     const [error, setError] = useState(null);
 
     // 相対パスを使用
+    // 相対パスを使用
     const backgrounds = [
-        '/backgrounds/default.jpg',
-        '/backgrounds/living-room.jpg',
-        '/backgrounds/garden.jpg',
+        '/yoriai/backgrounds/default.jpg',
+        '/yoriai/backgrounds/living-room.jpg',
+        '/yoriai/backgrounds/garden.jpg',
     ];
 
     // プリロードと状態管理

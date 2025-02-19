@@ -80,7 +80,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             currentSpeech = pendingSpeechesRef.current[0];
             logDebug('Processing speech:', currentSpeech);
 
-            const response = await fetch('/api/speeches', {
+            const response = await fetch('/yoriai/api/speeches', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -271,7 +271,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             }
 
             // ミーティングの作成
-            const response = await fetch('/api/meetings', {
+            const response = await fetch('/yoriai/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId })
@@ -360,7 +360,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
 
             // ミーティングを終了（initiatorの場合のみ）
             if (emitEvent) {
-                const response = await fetch(`/api/meetings/${meetingIdRef.current}`, {
+                const response = await fetch(`/yoriai/api/meetings/${meetingIdRef.current}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
