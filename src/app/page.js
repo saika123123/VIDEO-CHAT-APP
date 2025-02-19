@@ -56,7 +56,7 @@ function HomeContent() {
         throw new Error('無効なレスポンス形式です');
       }
 
-      router.push(`/${data.roomId}?user=${data.userId}`);
+      router.push(`/yoriai/${data.roomId}?user=${data.userId}`);
 
     } catch (err) {
       setError(err.message || 'エラーが発生しました。もう一度お試しください。');

@@ -738,7 +738,7 @@ export default function VideoRoom({ roomId, userId }) {
 
     // 招待URLのコピー機能
     const copyInviteLink = () => {
-        const url = `${window.location.origin}/?room=${roomId}`;
+        const url = `${window.location.origin}/yoriai/?room=${roomId}`;
         navigator.clipboard.writeText(url).then(() => {
             setShowCopied(true);
             setTimeout(() => setShowCopied(false), 2000);
