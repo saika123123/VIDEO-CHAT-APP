@@ -484,22 +484,25 @@ export default function VideoRoom({ roomId, userId }) {
 
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
-
-        // ホストとプロトコルを取得
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-
-        socketRef.current = io(`${window.location.protocol}//${host}`, {
+        socketRef.current = io(window.location.origin, {
             path: '/yoriai/socket.io/',
-            transports: ['polling'],
+            transports: ['polling', 'websocket'], // ポーリングとWebSocketの両方を許可
             secure: true,
             rejectUnauthorized: false,
-            query: { roomId, userId, userName: name }
+            query: { roomId, userId, userName: name },
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 20000
         });
+
         socketRef.current.on('connect', () => {
-            console.log('Connected to signaling server');
+            console.log('Connected to signaling server via:', socketRef.current.io.engine.transport.name);
             setConnectionStatus('connected');
-            updateDebugInfo({ socketConnected: true });
+            updateDebugInfo({
+                socketConnected: true,
+                transport: socketRef.current.io.engine.transport.name
+            });
         });
 
         socketRef.current.on('connect_error', (error) => {

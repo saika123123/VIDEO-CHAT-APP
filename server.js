@@ -1,26 +1,24 @@
 const express = require('express');
-const https = require('https');
+const https = require('http');
 const fs = require('fs');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-const options = {
-    key: fs.readFileSync('/etc/nginx/ssl/nginx.key'),
-    cert: fs.readFileSync('/etc/nginx/ssl/nginx.crt')
-};
 
-const server = https.createServer(options, app);
+const server = http.createServer(app);
 
 app.use(cors());
 
 const io = new Server(server, {
     cors: {
-        origin: "https://es4.eedept.kobe-u.ac.jp", // 任意のオリジンからのアクセスを許可
-        methods: ["GET", "POST"],
-        credentials: true
-    }
-});
+      origin: "*", // すべてのオリジンからのアクセスを許可
+      methods: ["GET", "POST"],
+      credentials: true
+    },
+    // デフォルトで/socket.io/パスを使用
+    transports: ['polling', 'websocket'] // ポーリングとWebSocket両方対応
+  });
 
 // ルームごとの参加者を管理するMap
 const rooms = new Map();
