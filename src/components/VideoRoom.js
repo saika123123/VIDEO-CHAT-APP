@@ -7,10 +7,13 @@ import MeetingRecorder from './MeetingRecorder';
 // WebRTC設定の改善
 const configuration = {
     iceServers: [
+        // STUNサーバー（接続の最初の段階で使用）
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
+        
+        // より多様な無料のTURNサーバー
         {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -21,16 +24,19 @@ const configuration = {
             username: 'openrelayproject',
             credential: 'openrelayproject'
         },
-        // Googleの無料TURNサーバー
         {
-            urls: 'turn:192.158.29.39:3478?transport=udp',
-            credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
-            username: '28224511:1379330808'
+            urls: 'turn:turn.bistri.com:80',
+            username: 'homeo',
+            credential: 'homeo'
         }
     ],
+    // ICEの振る舞いをより柔軟に
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require'
+    rtcpMuxPolicy: 'require',
+    
+    // 新しいオプションを追加
+    iceTransportPolicy: 'all'  // すべての候補タイプを試行
 };
 
 // メディア制約
