@@ -12,10 +12,20 @@ const configuration = {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         {
-            // 実際のTURNサーバー情報に置き換える必要あり
-            urls: 'turn:your-turn-server.com',
-            username: 'username',
-            credential: 'credential'
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        // Googleの無料TURNサーバー
+        {
+            urls: 'turn:192.158.29.39:3478?transport=udp',
+            credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
+            username: '28224511:1379330808'
         }
     ],
     iceCandidatePoolSize: 10,
