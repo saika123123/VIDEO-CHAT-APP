@@ -102,7 +102,7 @@ export default function VideoRoom({ roomId, userId }) {
     // State管理
     const [users, setUsers] = useState([]);
     const [userName, setUserName] = useState('');
-    const [background, setBackground] = useState('/backgrounds/default.jpg');
+    const [background, setBackground] = useState('/yoriai/backgrounds/default.jpg');
     const [deviceError, setDeviceError] = useState(null);
     const [showCopied, setShowCopied] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
