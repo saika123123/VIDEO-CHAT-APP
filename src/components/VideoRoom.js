@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import BackgroundSelector from './BackgroundSelector';
-import MeetingRecorder from './MeetingRecorder';
 
 // WebRTC設定の改善
 const configuration = {
@@ -129,14 +128,13 @@ export default function VideoRoom({ roomId, userId }) {
             alert('録音を開始するにはマイクをオンにしてください');
             return;
         }
-
+    
         if (isRecording) {
             // 録音停止
             await meetingRecorderRef.current?.stopRecording();
             setIsRecording(false);
         } else {
-            // 録音開始
-            setShowRecorder(true); // パネルを表示
+            // 録音開始 - パネルは表示しない
             const success = await meetingRecorderRef.current?.startRecording();
             if (success) {
                 setIsRecording(true);
@@ -1083,7 +1081,7 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
             )}
 
-            {/* 議事録コンポーネント */}
+            {/* 議事録コンポーネント
             <div className={`fixed right-0 top-16 md:top-24 w-full md:w-96 bg-white rounded-l-2xl shadow-lg overflow-hidden transition-transform duration-300 ${showRecorder || isRecording ? 'translate-x-0' : 'translate-x-full'}`}>
                 <MeetingRecorder
                     ref={meetingRecorderRef}
@@ -1094,9 +1092,9 @@ export default function VideoRoom({ roomId, userId }) {
                     users={users}
                     socketRef={socketRef}
                 />
-            </div>
+            </div> */}
 
-            {/* 会話記録を表示ボタン（録音中のみ表示） */}
+            {/* 会話記録を表示ボタン（録音中のみ表示）
             {isRecording && !showRecorder && (
                 <button
                     onClick={() => setShowRecorder(true)}
@@ -1107,7 +1105,7 @@ export default function VideoRoom({ roomId, userId }) {
                             d="M15 19l-7-7 7-7" />
                     </svg>
                 </button>
-            )}
+            )} */}
         </div>
     );
 }
