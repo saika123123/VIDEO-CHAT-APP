@@ -1092,8 +1092,8 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
             )}
 
-            {/* 議事録コンポーネント
-            <div className={`fixed right-0 top-16 md:top-24 w-full md:w-96 bg-white rounded-l-2xl shadow-lg overflow-hidden transition-transform duration-300 ${showRecorder || isRecording ? 'translate-x-0' : 'translate-x-full'}`}>
+            {/* 録音機能のためのコンポーネント - 非表示で機能のみ使用 */}
+            <div className="hidden" style={{ display: 'none' }} aria-hidden="true">
                 <MeetingRecorder
                     ref={meetingRecorderRef}
                     roomId={roomId}
@@ -1103,7 +1103,7 @@ export default function VideoRoom({ roomId, userId }) {
                     users={users}
                     socketRef={socketRef}
                 />
-            </div> */}
+            </div>
 
             {/* 会話記録を表示ボタン（録音中のみ表示）
             {isRecording && !showRecorder && (
