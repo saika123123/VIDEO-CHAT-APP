@@ -123,22 +123,33 @@ export default function VideoRoom({ roomId, userId }) {
     const meetingRecorderRef = useRef(null);
 
     // 会話記録の開始/停止を切り替える関数
+    // toggleRecording関数の修正
     const toggleRecording = async () => {
         if (!isAudioOn) {
             alert('録音を開始するにはマイクをオンにしてください');
             return;
         }
-    
-        if (isRecording) {
-            // 録音停止
-            await meetingRecorderRef.current?.stopRecording();
-            setIsRecording(false);
-        } else {
-            // 録音開始 - パネルは表示しない
-            const success = await meetingRecorderRef.current?.startRecording();
-            if (success) {
-                setIsRecording(true);
+
+        console.log("現在の録音状態:", isRecording); // デバッグ用
+
+        try {
+            if (isRecording) {
+                // 録音停止
+                await meetingRecorderRef.current?.stopRecording();
+                setIsRecording(false);
+                console.log("録音停止しました"); // デバッグ用
+            } else {
+                // 録音開始
+                const success = await meetingRecorderRef.current?.startRecording();
+                if (success) {
+                    setIsRecording(true);
+                    console.log("録音開始しました"); // デバッグ用
+                } else {
+                    console.error("録音開始に失敗しました"); // デバッグ用
+                }
             }
+        } catch (error) {
+            console.error("録音操作中にエラーが発生しました:", error); // デバッグ用
         }
     };
 
