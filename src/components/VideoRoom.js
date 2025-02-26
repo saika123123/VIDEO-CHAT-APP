@@ -688,13 +688,18 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
     // 部屋を退出する
+    // VideoRoom.js内のleaveRoom関数を修正
     const leaveRoom = async () => {
         try {
             setConnectionStatus('disconnecting');
 
-            // もし録音中なら、まず録音を停止して議事録を保存
+            // もし録音中なら、まず録音を停止
             if (isRecording) {
-                await meetingRecorderRef.current?.stopRecording();
+                setIsRecording(false);
+                // MeetingRecorderコンポーネントがある場合の処理
+                if (meetingRecorderRef.current?.stopRecording) {
+                    await meetingRecorderRef.current.stopRecording();
+                }
             }
 
             // メディアストリームの停止
@@ -703,7 +708,8 @@ export default function VideoRoom({ roomId, userId }) {
             }
 
             // WebRTC接続のクリーンアップ
-            Object.keys(peersRef.current).forEach(socketId => {
+            const currentPeers = { ...peersRef.current };
+            Object.keys(currentPeers).forEach(socketId => {
                 cleanupPeerConnection(socketId);
             });
 
@@ -712,12 +718,20 @@ export default function VideoRoom({ roomId, userId }) {
                 socketRef.current.disconnect();
             }
 
-            // ホームページへリダイレクト
-            window.location.href = '/';
+            // ウィンドウを閉じる
+            window.close();
+
+            // window.close()が動作しない場合（一部のブラウザでは制限があります）
+            // 念のためホームページへのリダイレクトをフォールバックとして残しておく
+            setTimeout(() => {
+                window.location.href = '/yoriai/';
+            }, 300);
         } catch (error) {
             console.error('Error during room exit:', error);
-            // エラーが発生してもホームページへ移動
-            window.location.href = '/';
+            // エラー時にもウィンドウを閉じる試行
+            window.close();
+            // フォールバック
+            window.location.href = '/yoriai/';
         }
     };
 
@@ -1059,6 +1073,7 @@ export default function VideoRoom({ roomId, userId }) {
 
                     {/* 退出ボタン */}
                     <div className="flex flex-col items-center">
+                    // 退出ボタンのonClickハンドラを修正
                         <button
                             onClick={() => {
                                 if (window.confirm('ビデオ通話を終了しますか？')) {
@@ -1066,10 +1081,10 @@ export default function VideoRoom({ roomId, userId }) {
                                 }
                             }}
                             className="
-                                p-3 md:p-6 rounded-full bg-red-600 text-white 
-                                hover:opacity-90 transition-opacity shadow-lg
-                                flex flex-col items-center gap-2
-                            "
+        p-3 md:p-6 rounded-full bg-red-600 text-white 
+        hover:opacity-90 transition-opacity shadow-lg
+        flex flex-col items-center gap-2
+    "
                             aria-label="ビデオ通話を終了する"
                         >
                             <svg className="w-6 h-6 md:w-10 md:h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
