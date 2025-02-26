@@ -110,6 +110,7 @@ export default function VideoRoom({ roomId, userId }) {
     const [showSettings, setShowSettings] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('initializing');
     const [showRecorder, setShowRecorder] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
 
     // Refs
     const socketRef = useRef();
@@ -120,7 +121,28 @@ export default function VideoRoom({ roomId, userId }) {
     const isSettingRemoteAnswerRef = useRef(false);
     const reconnectionAttemptsRef = useRef({});
     const isReconnectingRef = useRef(false);
+    const meetingRecorderRef = useRef(null);
 
+    // 会話記録の開始/停止を切り替える関数
+    const toggleRecording = async () => {
+        if (!isAudioOn) {
+            alert('録音を開始するにはマイクをオンにしてください');
+            return;
+        }
+
+        if (isRecording) {
+            // 録音停止
+            await meetingRecorderRef.current?.stopRecording();
+            setIsRecording(false);
+        } else {
+            // 録音開始
+            setShowRecorder(true); // パネルを表示
+            const success = await meetingRecorderRef.current?.startRecording();
+            if (success) {
+                setIsRecording(true);
+            }
+        }
+    };
 
     // ユーティリティ関数
     const calculateReconnectionDelay = (attempts) => {
@@ -174,7 +196,6 @@ export default function VideoRoom({ roomId, userId }) {
             return 'grid-cols-4 md:grid-cols-5';
         }
     };
-
     // WebRTC接続管理
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
@@ -647,6 +668,11 @@ export default function VideoRoom({ roomId, userId }) {
             if (audioTrack) {
                 audioTrack.enabled = !audioTrack.enabled;
                 setIsAudioOn(audioTrack.enabled);
+
+                // マイクをオフにする際、録音中なら停止する
+                if (!audioTrack.enabled && isRecording) {
+                    toggleRecording();
+                }
             }
         }
     };
@@ -657,8 +683,8 @@ export default function VideoRoom({ roomId, userId }) {
             setConnectionStatus('disconnecting');
 
             // もし録音中なら、まず録音を停止して議事録を保存
-            if (meetingRecorderRef.current?.endMeeting) {
-                await meetingRecorderRef.current.endMeeting();
+            if (isRecording) {
+                await meetingRecorderRef.current?.stopRecording();
             }
 
             // メディアストリームの停止
@@ -976,15 +1002,17 @@ export default function VideoRoom({ roomId, userId }) {
                         </span>
                     </div>
 
-                    {/* 会話記録ボタン */}
+                    {/* 会話記録ボタン - 直接録音開始/停止機能 */}
                     <div className="flex flex-col items-center">
                         <button
-                            onClick={() => setShowRecorder(!showRecorder)}
+                            onClick={toggleRecording}
                             className={`
-                                p-3 md:p-6 rounded-full ${showRecorder ? 'bg-green-600' : 'bg-gray-600'} text-white 
-                                hover:opacity-90 transition-opacity shadow-lg
+                                p-3 md:p-6 rounded-full 
+                                ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
+                                text-white hover:opacity-90 transition-opacity shadow-lg
                                 flex flex-col items-center gap-2
                             `}
+                            disabled={!isAudioOn}
                         >
                             <svg className="w-6 h-6 md:w-10 md:h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -992,7 +1020,9 @@ export default function VideoRoom({ roomId, userId }) {
                                 />
                             </svg>
                         </button>
-                        <span className="mt-1 md:mt-2 text-sm md:text-lg font-bold">会話記録</span>
+                        <span className="mt-1 md:mt-2 text-sm md:text-lg font-bold">
+                            {isRecording ? '録音中' : '録音開始'}
+                        </span>
                     </div>
 
                     {/* 背景設定ボタン */}
@@ -1054,8 +1084,9 @@ export default function VideoRoom({ roomId, userId }) {
             )}
 
             {/* 議事録コンポーネント */}
-            <div className={`fixed right-0 top-16 md:top-24 w-full md:w-96 bg-white rounded-l-2xl shadow-lg overflow-hidden transition-transform duration-300 ${showRecorder ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className={`fixed right-0 top-16 md:top-24 w-full md:w-96 bg-white rounded-l-2xl shadow-lg overflow-hidden transition-transform duration-300 ${showRecorder || isRecording ? 'translate-x-0' : 'translate-x-full'}`}>
                 <MeetingRecorder
+                    ref={meetingRecorderRef}
                     roomId={roomId}
                     userId={userId}
                     userName={userName}
@@ -1065,31 +1096,18 @@ export default function VideoRoom({ roomId, userId }) {
                 />
             </div>
 
-            {/* 招待案内（参加者がいない場合）
-            {users.length === 0 && (
-                <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-white/90 px-8 py-6 rounded-xl shadow-lg">
-                    <p className="text-center text-xl text-gray-800">
-                        <span className="font-bold">「招待URLをコピー」</span>ボタンをクリックして、<br />
-                        他の参加者を招待できます
-                    </p>
-                </div>
-            )} */}
-
-            {/* デバッグ情報（開発環境のみ） */}
-            {/* {process.env.NODE_ENV === 'development' && (
-            <div className="fixed bottom-4 right-4 bg-black/50 text-white text-xs p-4 rounded-xl">
-                <div className="space-y-1">
-                    <div>Room ID: {roomId}</div>
-                    <div>User ID: {userId}</div>
-                    <div>User Name: {userName}</div>
-                    <div>Connected Users: {users.length}</div>
-                    <div>Camera: {isCameraOn ? 'ON' : 'OFF'}</div>
-                    <div>Audio: {isAudioOn ? 'ON' : 'OFF'}</div>
-                    <div>Connection Status: {connectionStatus}</div>
-                    <div>Peer Connections: {Object.keys(peersRef.current).length}</div>
-                </div>
-            </div>
-        )} */}
+            {/* 会話記録を表示ボタン（録音中のみ表示） */}
+            {isRecording && !showRecorder && (
+                <button
+                    onClick={() => setShowRecorder(true)}
+                    className="fixed right-0 top-24 bg-green-600 text-white px-3 py-2 rounded-l-lg shadow-lg"
+                >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+            )}
         </div>
     );
 }

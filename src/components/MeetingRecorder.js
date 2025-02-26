@@ -1,7 +1,7 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
-const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef }) => {
+const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users, socketRef }, ref) => {
     // State管理
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
@@ -29,6 +29,37 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         const timestamp = new Date().toISOString();
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data ? data : '');
     };
+
+    // 親コンポーネントに公開するメソッド
+    useImperativeHandle(ref, () => ({
+        // 録音開始メソッド
+        startRecording: async () => {
+            try {
+                if (!isAudioOn) {
+                    throw new Error('マイクがミュートされています');
+                }
+
+                await startRecording();
+                return true;
+            } catch (error) {
+                console.error('録音開始エラー:', error);
+                setError(error.message);
+                return false;
+            }
+        },
+        // 録音停止メソッド
+        stopRecording: async () => {
+            try {
+                await stopRecording(true);
+                return true;
+            } catch (error) {
+                console.error('録音停止エラー:', error);
+                return false;
+            }
+        },
+        // 現在の録音状態を取得
+        isCurrentlyRecording: () => isRecording
+    }));
 
     // キューに音声を追加（送信者の情報を含める）
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
@@ -406,72 +437,39 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
         };
     }, []);
 
-    // MeetingRecorder.js のreturn部分を修正
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            {/* ヘッダーと録音コントロール */}
+            {/* ヘッダー部分 */}
             <div className="bg-blue-600 p-6">
                 <div className="flex flex-col items-stretch gap-4">
-                    <h3 className="text-2xl font-bold text-white text-center">音声の記録</h3>
-                    
-                    <button
-                        onClick={isRecording ? () => stopRecording(true) : startRecording}
-                        disabled={!isAudioOn || isSaving}
-                        className={`
-                            w-full px-6 py-4 rounded-xl
-                            text-xl font-bold
-                            flex items-center justify-center gap-3
-                            transition-all duration-200
-                            ${isRecording
-                                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
-                                : 'bg-white text-blue-600 hover:bg-blue-50'
-                            }
-                            ${(!isAudioOn || isSaving) && 'opacity-50 cursor-not-allowed'}
-                            shadow-lg
-                        `}
-                    >
-                        {isSaving ? (
-                            <>
-                                <div className="w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                <span>保存しています...</span>
-                            </>
-                        ) : (
-                            <>
-                                {isRecording ? (
-                                    <>
-                                        <div className="w-4 h-4 bg-white rounded-full animate-pulse"></div>
-                                        <span>録音を停止する</span>
-                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
-                                            <rect x="6" y="6" width="12" height="12" />
-                                        </svg>
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
-                                            <circle cx="12" cy="12" r="6" />
-                                        </svg>
-                                        <span>ここを押して録音開始</span>
-                                    </>
-                                )}
-                            </>
-                        )}
-                    </button>
-    
-                    {!isAudioOn && (
-                        <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-800 p-4 rounded-xl text-lg text-center">
-                            <div className="flex items-center justify-center gap-2">
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                                    />
-                                </svg>
-                                <span>マイクがオフになっています</span>
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-2xl font-bold text-white">会話の記録</h3>
+                    </div>
+
+                    {/* 録音状態の表示部分 */}
+                    {isRecording ? (
+                        <div className="bg-green-50 border-2 border-green-200 text-green-700 rounded-xl p-4">
+                            <div className="flex items-center gap-2 text-lg font-bold">
+                                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                                <span>録音中です</span>
                             </div>
+                            {recordingInitiator && (
+                                <div className="mt-3 text-md">
+                                    <span className="font-bold">開始した人:</span> {recordingInitiator}
+                                </div>
+                            )}
+                            <div className="mt-2 text-md">
+                                <span className="font-bold">処理待ち:</span> {pendingSpeechesRef.current.length} 件
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-gray-100 text-gray-700 p-4 rounded-xl text-center">
+                            <p className="text-md">会話は録音されていません</p>
                         </div>
                     )}
                 </div>
             </div>
-    
+
             {/* エラーメッセージ */}
             {error && (
                 <div className="m-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-lg">
@@ -485,32 +483,24 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                     </div>
                 </div>
             )}
-    
-            {/* 録音中の状態表示 */}
-            {isRecording && (
-                <div className="mx-4 mt-4 p-4 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl">
-                    <div className="flex items-center gap-2 text-lg font-bold">
-                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                        <span>録音中です</span>
-                    </div>
-                    {recordingInitiator && (
-                        <div className="mt-3 text-lg">
-                            <span className="font-bold">開始した人:</span> {recordingInitiator}
-                        </div>
-                    )}
-                    <div className="mt-2 text-lg">
-                        <span className="font-bold">処理待ち:</span> {pendingSpeechesRef.current.length} 件
+
+            {/* 保存中のインジケーター */}
+            {isSaving && (
+                <div className="m-4 p-4 bg-blue-50 border-2 border-blue-200 text-blue-700 rounded-xl">
+                    <div className="flex items-center justify-center gap-3">
+                        <div className="w-5 h-5 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-lg font-medium">保存しています...</span>
                     </div>
                 </div>
             )}
-    
+
             {/* 議事録一覧 */}
             <div className="p-4">
                 <div className="font-bold text-xl mb-4 text-gray-700">記録された会話</div>
                 <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
                     {transcript.map((item, index) => (
-                        <div 
-                            key={item.id || index} 
+                        <div
+                            key={item.id || index}
                             className="bg-gray-50 rounded-xl p-4 shadow-sm border border-gray-100"
                         >
                             <div className="flex justify-between items-center mb-2">
@@ -529,9 +519,9 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                             </p>
                         </div>
                     ))}
-    
+
                     {/* 記録がない場合の表示 */}
-                    {transcript.length === 0 && !isRecording && (
+                    {transcript.length === 0 && (
                         <div className="text-center py-8 bg-gray-50 rounded-xl">
                             <div className="text-gray-400">
                                 <svg className="w-16 h-16 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -543,7 +533,7 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
                                     まだ会話は記録されていません
                                 </p>
                                 <p className="text-lg">
-                                    上の「録音開始」ボタンを<br />押してください
+                                    録音を開始すると、ここに<br />会話が記録されます
                                 </p>
                             </div>
                         </div>
@@ -552,6 +542,8 @@ const MeetingRecorder = ({ roomId, userId, userName, isAudioOn, users, socketRef
             </div>
         </div>
     );
-};
+});
+
+MeetingRecorder.displayName = 'MeetingRecorder';
 
 export default MeetingRecorder;
