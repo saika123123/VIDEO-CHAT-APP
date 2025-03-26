@@ -13,10 +13,10 @@ const configuration = {
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        
+
         // Twilioの無料STUNサーバー
         { urls: 'stun:global.stun.twilio.com:3478' },
-        
+
         // オープンソースのSTUNサーバー
         { urls: 'stun:stun.stunprotocol.org:3478' }
     ],
@@ -113,6 +113,7 @@ export default function VideoRoom({ roomId, userId }) {
     const [connectionStatus, setConnectionStatus] = useState('initializing');
     const [showRecorder, setShowRecorder] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    const [recordingInitiator, setRecordingInitiator] = useState(null);
 
     // Refs
     const socketRef = useRef();
@@ -798,6 +799,36 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
+    // 録音の開始/停止を処理するsocket.ioイベントリスナーを追加
+    useEffect(() => {
+        if (!socketRef.current) return;
+
+        // 他の誰かが録音を開始した時のハンドラ
+        const handleRecordingStarted = ({ meetingId, initiatorName }) => {
+            console.log(`Recording started by ${initiatorName}`);
+            setIsRecording(true);
+            setRecordingInitiator(initiatorName);
+        };
+
+        // 他の誰かが録音を停止した時のハンドラ
+        const handleRecordingStopped = () => {
+            console.log('Recording stopped');
+            setIsRecording(false);
+            setRecordingInitiator(null);
+        };
+
+        // イベントリスナーの登録
+        socketRef.current.on('recording-started', handleRecordingStarted);
+        socketRef.current.on('recording-stopped', handleRecordingStopped);
+
+        return () => {
+            if (socketRef.current) {
+                socketRef.current.off('recording-started', handleRecordingStarted);
+                socketRef.current.off('recording-stopped', handleRecordingStopped);
+            }
+        };
+    }, [socketRef?.current]);
+
     if (deviceError) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -857,7 +888,7 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
 
                 {/* 招待URLコピーボタン */}
-                <button
+                {/* <button
                     onClick={copyInviteLink}
                     className="
                         bg-blue-600 text-white px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg 
@@ -872,7 +903,7 @@ export default function VideoRoom({ roomId, userId }) {
                     </svg>
                     <span className="hidden md:inline">{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
                     <span className="md:hidden">{showCopied ? 'コピー完了' : '招待URL'}</span>
-                </button>
+                </button> */}
             </div>
 
             {/* ビデオグリッド */}
@@ -1019,11 +1050,11 @@ export default function VideoRoom({ roomId, userId }) {
                         <button
                             onClick={toggleRecording}
                             className={`
-                                p-3 md:p-6 rounded-full 
-                                ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
-                                text-white hover:opacity-90 transition-opacity shadow-lg
-                                flex flex-col items-center gap-2
-                            `}
+            p-3 md:p-6 rounded-full 
+            ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
+            text-white hover:opacity-90 transition-opacity shadow-lg
+            flex flex-col items-center gap-2
+        `}
                             disabled={!isAudioOn}
                         >
                             <svg className="w-6 h-6 md:w-10 md:h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1035,6 +1066,11 @@ export default function VideoRoom({ roomId, userId }) {
                         <span className="mt-1 md:mt-2 text-sm md:text-lg font-bold">
                             {isRecording ? '録音中' : '録音開始'}
                         </span>
+                        {isRecording && recordingInitiator && (
+                            <span className="text-xs text-red-600 font-medium">
+                                {recordingInitiator === userName ? 'あなたが開始' : `${recordingInitiator}が開始`}
+                            </span>
+                        )}
                     </div>
 
                     {/* 背景設定ボタン */}
