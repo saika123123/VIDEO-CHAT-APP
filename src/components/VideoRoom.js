@@ -56,59 +56,101 @@ const getBackgroundUrl = (path) => {
     return `${window.location.origin}${path}`;
 };
 
-// テスト用のフェイクストリームを生成する関数
-const createFakeStream = (userName) => {
+// ダミーのビデオストリームを生成する関数
+const createDummyVideoStream = (userName) => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
     canvas.height = 480;
     const ctx = canvas.getContext('2d');
     const stream = canvas.captureStream(30);
 
-    let hue = 0;
+    // ユーザー名を表示するテキスト
     const drawInterval = setInterval(() => {
-        hue = (hue + 1) % 360;
-        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        // 背景を塗りつぶし
+        ctx.fillStyle = '#f0f0f0';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'white';
-        ctx.font = '48px Arial';
-        ctx.fillText(new Date().toLocaleTimeString(), 20, 100);
-        ctx.fillText(`User: ${userName}`, 20, 160);
+        
+        // 円を描画
+        ctx.fillStyle = '#3B82F6'; // Tailwindのblue-500
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2 - 60, 100, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // 人型シルエットを描画
+        ctx.fillStyle = '#ffffff';
+        // 頭
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2 - 60, 50, 0, 2 * Math.PI);
+        ctx.fill();
+        // 胴体
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, canvas.height / 2 - 10);
+        ctx.lineTo(canvas.width / 2, canvas.height / 2 + 80);
+        ctx.lineWidth = 30;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        
+        // ユーザー名とデバイス状態のテキスト
+        ctx.fillStyle = '#000000';
+        ctx.font = '30px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(userName, canvas.width / 2, canvas.height / 2 + 150);
+        ctx.font = '24px Arial';
+        ctx.fillText('カメラが接続されていません', canvas.width / 2, canvas.height / 2 + 190);
     }, 1000 / 30);
 
-    stream.stopFakeStream = () => {
+    stream.stopDummyStream = () => {
         clearInterval(drawInterval);
     };
 
-    let audioCtx;
-    let audioTrack;
-
-    const initAudio = () => {
-        if (!audioCtx) {
-            audioCtx = new AudioContext();
-            const oscillator = audioCtx.createOscillator();
-            oscillator.frequency.value = 0;
-            const dst = oscillator.connect(audioCtx.createMediaStreamDestination());
-            oscillator.start();
-            audioTrack = dst.stream.getAudioTracks()[0];
-            stream.addTrack(audioTrack);
-        }
-    };
-
-    document.addEventListener('click', initAudio, { once: true });
     return stream;
 };
+
+// ダミーのオーディオストリームを生成する関数
+const createDummyAudioStream = () => {
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    oscillator.frequency.value = 0; // 無音
+    const destination = oscillator.connect(audioContext.createMediaStreamDestination());
+    oscillator.start();
+    const stream = destination.stream;
+    
+    stream.stopDummyStream = () => {
+        oscillator.stop();
+        audioContext.close();
+    };
+    
+    return stream;
+};
+
+// メディアデバイスの存在確認
+async function checkMediaDevices() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasCamera = devices.some(device => device.kind === 'videoinput');
+        const hasMicrophone = devices.some(device => device.kind === 'audioinput');
+        return { hasCamera, hasMicrophone };
+    } catch (error) {
+        console.error('デバイス確認中にエラーが発生しました:', error);
+        return { hasCamera: false, hasMicrophone: false };
+    }
+}
 
 export default function VideoRoom({ roomId, userId }) {
     // State管理
     const [users, setUsers] = useState([]);
     const [userName, setUserName] = useState('');
     const [background, setBackground] = useState('/yoriai/backgrounds/default.jpg');
-    const [deviceError, setDeviceError] = useState(null);
+    const [deviceStatus, setDeviceStatus] = useState({
+        hasCamera: null,
+        hasMicrophone: null,
+        errorMessage: null
+    });
     const [showCopied, setShowCopied] = useState(false);
     const [isConnecting, setIsConnecting] = useState(true);
     const [debugInfo, setDebugInfo] = useState({});
-    const [isCameraOn, setIsCameraOn] = useState(true);
-    const [isAudioOn, setIsAudioOn] = useState(true);
+    const [isCameraOn, setIsCameraOn] = useState(false); // デフォルトはオフに変更
+    const [isAudioOn, setIsAudioOn] = useState(false); // デフォルトはオフに変更
     const [showSettings, setShowSettings] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('initializing');
     const [showRecorder, setShowRecorder] = useState(false);
@@ -127,7 +169,6 @@ export default function VideoRoom({ roomId, userId }) {
     const meetingRecorderRef = useRef(null);
 
     // 会話記録の開始/停止を切り替える関数
-    // toggleRecording関数の修正
     const toggleRecording = async () => {
         if (!isAudioOn) {
             alert('録音を開始するにはマイクをオンにしてください');
@@ -209,6 +250,7 @@ export default function VideoRoom({ roomId, userId }) {
             return 'grid-cols-4 md:grid-cols-5';
         }
     };
+    
     // WebRTC接続管理
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
@@ -522,7 +564,6 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-
     // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
         socketRef.current = io(window.location.origin, {
@@ -666,6 +707,12 @@ export default function VideoRoom({ roomId, userId }) {
 
     // カメラとマイクの制御
     const toggleCamera = () => {
+        // カメラがない場合、トグルできないことを表示
+        if (!deviceStatus.hasCamera) {
+            alert('このデバイスにはカメラが接続されていません');
+            return;
+        }
+
         if (localStreamRef.current) {
             const videoTrack = localStreamRef.current.getVideoTracks()[0];
             if (videoTrack) {
@@ -676,6 +723,12 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
     const toggleAudio = () => {
+        // マイクがない場合、トグルできないことを表示
+        if (!deviceStatus.hasMicrophone) {
+            alert('このデバイスにはマイクが接続されていません');
+            return;
+        }
+
         if (localStreamRef.current) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
             if (audioTrack) {
@@ -703,6 +756,9 @@ export default function VideoRoom({ roomId, userId }) {
             // メディアストリームの停止
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
+                if (localStreamRef.current.stopDummyStream) {
+                    localStreamRef.current.stopDummyStream();
+                }
             }
 
             // WebRTC接続のクリーンアップ
@@ -716,7 +772,7 @@ export default function VideoRoom({ roomId, userId }) {
             }
 
             // ホームページへリダイレクト
-            window.location.href = '/online-circle/login';
+            window.location.href = '/yoriai/';
         } catch (error) {
             console.error('Error during room exit:', error);
             // エラーが発生してもホームページへ移動
@@ -736,20 +792,79 @@ export default function VideoRoom({ roomId, userId }) {
                 if (!mounted) return;
                 if (!name) throw new Error('ユーザー名の取得に失敗しました');
 
+                // デバイスのチェック
+                const { hasCamera, hasMicrophone } = await checkMediaDevices();
+                setDeviceStatus({ hasCamera, hasMicrophone, errorMessage: null });
+                console.log('デバイス状態:', { hasCamera, hasMicrophone });
+
                 let stream;
+                
+                // テスト環境はフェイクストリームを使用
                 if (process.env.NODE_ENV === 'development' && window.location.search.includes('test=true')) {
-                    stream = createFakeStream(name);
+                    stream = createDummyVideoStream(name);
+                    console.log('テスト用ダミーストリームを作成しました');
                 } else {
                     try {
-                        stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+                        // カメラ・マイクが利用可能な場合は実際のデバイスを使用
+                        if (hasCamera || hasMicrophone) {
+                            const constraints = {
+                                audio: hasMicrophone ? mediaConstraints.audio : false,
+                                video: hasCamera ? mediaConstraints.video : false
+                            };
+                            
+                            stream = await navigator.mediaDevices.getUserMedia(constraints);
+                            console.log('実際のメディアデバイスを取得しました:', constraints);
+                            
+                            // デフォルトでデバイスをオンに設定
+                            if (hasCamera) setIsCameraOn(true);
+                            if (hasMicrophone) setIsAudioOn(true);
+                        } else {
+                            // どちらのデバイスもない場合はダミーストリームを作成
+                            console.log('メディアデバイスが見つかりません。ダミーストリームを作成します。');
+                            
+                            // ビデオ用のダミーストリーム
+                            const videoStream = createDummyVideoStream(name);
+                            
+                            // オーディオ用のダミーストリーム
+                            const audioStream = createDummyAudioStream();
+                            
+                            // 2つのストリームをマージ
+                            stream = new MediaStream();
+                            videoStream.getTracks().forEach(track => stream.addTrack(track));
+                            audioStream.getTracks().forEach(track => stream.addTrack(track));
+                            
+                            // ダミーストリームの停止関数を保存
+                            stream.stopDummyStream = () => {
+                                videoStream.stopDummyStream();
+                                audioStream.stopDummyStream();
+                            };
+                        }
                     } catch (err) {
-                        console.error('Error accessing media devices:', err);
-                        throw new Error(`デバイスへのアクセスに失敗しました: ${err.message}`);
+                        console.error('メディアデバイスへのアクセスに失敗しました:', err);
+                        // エラーが発生した場合、ダミーストリームで代替
+                        console.log('エラーが発生したためダミーストリームを作成します');
+                        const videoStream = createDummyVideoStream(name);
+                        const audioStream = createDummyAudioStream();
+                        
+                        stream = new MediaStream();
+                        videoStream.getTracks().forEach(track => stream.addTrack(track));
+                        audioStream.getTracks().forEach(track => stream.addTrack(track));
+                        
+                        stream.stopDummyStream = () => {
+                            videoStream.stopDummyStream();
+                            audioStream.stopDummyStream();
+                        };
+                        
+                        // デバイスステータスを更新
+                        setDeviceStatus(prev => ({
+                            ...prev,
+                            errorMessage: `デバイスへのアクセスに失敗しました: ${err.message}`
+                        }));
                     }
                 }
 
                 if (!mounted) {
-                    if (stream.stopFakeStream) stream.stopFakeStream();
+                    if (stream.stopDummyStream) stream.stopDummyStream();
                     stream.getTracks().forEach(track => track.stop());
                     return;
                 }
@@ -763,8 +878,33 @@ export default function VideoRoom({ roomId, userId }) {
             } catch (error) {
                 console.error('Initialization error:', error);
                 if (!mounted) return;
-                setDeviceError(error.message);
+                
+                // エラーメッセージを更新するが、参加は継続
+                setDeviceStatus(prev => ({
+                    ...prev,
+                    errorMessage: `初期化エラー: ${error.message}`
+                }));
+                
+                // ダミーストリームを作成して接続を継続
+                const name = await fetchUserName() || userId;
+                const videoStream = createDummyVideoStream(name);
+                const audioStream = createDummyAudioStream();
+                
+                const combinedStream = new MediaStream();
+                videoStream.getTracks().forEach(track => combinedStream.addTrack(track));
+                audioStream.getTracks().forEach(track => combinedStream.addTrack(track));
+                
+                combinedStream.stopDummyStream = () => {
+                    videoStream.stopDummyStream();
+                    audioStream.stopDummyStream();
+                };
+                
+                localStreamRef.current = combinedStream;
                 setIsConnecting(false);
+                userNameFetchedRef.current = true;
+                
+                initializeSocketConnection(name);
+                
                 updateDebugInfo({ initError: error.message });
             }
         };
@@ -774,8 +914,8 @@ export default function VideoRoom({ roomId, userId }) {
         return () => {
             mounted = false;
             if (localStreamRef.current) {
-                if (localStreamRef.current.stopFakeStream) {
-                    localStreamRef.current.stopFakeStream();
+                if (localStreamRef.current.stopDummyStream) {
+                    localStreamRef.current.stopDummyStream();
                 }
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
