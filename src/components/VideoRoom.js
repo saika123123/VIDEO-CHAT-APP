@@ -1048,14 +1048,14 @@ export default function VideoRoom({ roomId, userId }) {
         };
     }, [socketRef?.current]);
 
-    if (deviceError) {
+    if (deviceStatus.errorMessage) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
                 <div className="bg-white p-8 rounded-lg shadow-md max-w-md">
                     <h2 className="text-xl font-bold mb-4 text-red-600">
                         デバイスエラー
                     </h2>
-                    <p className="text-gray-700 mb-4">{deviceError}</p>
+                    <p className="text-gray-700 mb-4">{deviceStatus.errorMessage}</p>
                     <div className="space-y-4">
                         <button
                             onClick={() => window.location.reload()}
