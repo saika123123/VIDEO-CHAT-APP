@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import BackgroundSelector from './BackgroundSelector';
+import MeetingRecorder from './MeetingRecorder';
 import MobileParticipantsList from './MobileParticipantsList';
 
 // WebRTC設定の改善
