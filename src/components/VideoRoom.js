@@ -1094,84 +1094,16 @@ export default function VideoRoom({ roomId, userId }) {
             }}
         >
             {/* ヘッダー部分 */}
-            {/* モバイル向け参加者表示 - VideoRoomのヘッダー部分に置き換え */}
-            {isMobile ? (
-                /* モバイル向けヘッダー */
-                <div className="fixed top-0 left-0 right-0 z-10 bg-black/60 px-2 py-2 flex justify-between items-center">
-                    <div className="flex items-center">
-                        <svg className="w-4 h-4 text-white mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                            />
-                        </svg>
-                        <span className="text-white text-sm">
-                            参加者: {users.length + 1}人
-                        </span>
-                    </div>
-
-                    {/* 接続状態インジケーター */}
-                    <div className="text-white text-xs flex items-center">
-                        {connectionStatus === 'connected' ? (
-                            <>
-                                <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                                <span>接続済み</span>
-                            </>
-                        ) : connectionStatus === 'reconnecting' ? (
-                            <>
-                                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse mr-1"></div>
-                                <span>再接続中...</span>
-                            </>
-                        ) : (
-                            <>
-                                <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                                <span>接続エラー</span>
-                            </>
-                        )}
+            <div className="fixed top-2 md:top-6 left-2 md:left-6 z-10 flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-6">
+                {/* 参加者数 */}
+                <div className="bg-white/90 text-gray-800 px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg">
+                    <div className="text-base md:text-xl font-bold">
+                        参加者: {users.length + 1}人
                     </div>
                 </div>
-            ) : (
-                /* デスクトップ向けヘッダー（既存コード） */
-                <div className="fixed top-2 md:top-6 left-2 md:left-6 z-10 flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-6">
-                    <div className="bg-white/90 text-gray-800 px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg">
-                        <div className="text-base md:text-xl font-bold">
-                            参加者: {users.length + 1}人
-                        </div>
-                    </div>
-                </div>
-            )}
 
-            {/* モバイル向け設定パネル */}
-            {showSettings && (
-                <div className={`fixed z-20 bg-white/90 rounded-lg shadow-lg ${isMobile ? 'bottom-16 left-2 right-2' : 'bottom-36 right-6 max-w-full w-64 md:w-auto'
-                    }`}>
-                    <div className="p-3">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-lg font-bold">背景を選択</h3>
-                            {isMobile && (
-                                <button
-                                    onClick={() => setShowSettings(false)}
-                                    className="p-1 bg-gray-200 rounded-full"
-                                >
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            )}
-                        </div>
-                        <BackgroundSelector
-                            onSelect={(bg) => {
-                                setBackground(bg);
-                                if (isMobile) setShowSettings(false);
-                            }}
-                            currentBackground={background}
-                        />
-                    </div>
-                </div>
-            )}
-
-
-            {/* 招待URLコピーボタン */}
-            {/* <button
+                {/* 招待URLコピーボタン */}
+                {/* <button
                     onClick={copyInviteLink}
                     className="
                         bg-blue-600 text-white px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg 
@@ -1187,193 +1119,190 @@ export default function VideoRoom({ roomId, userId }) {
                     <span className="hidden md:inline">{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
                     <span className="md:hidden">{showCopied ? 'コピー完了' : '招待URL'}</span>
                 </button> */}
-        </div>
-
-            {/* ビデオグリッド */ }
-    {/* VideoRoom.jsのビデオグリッド部分を置き換え */ }
-    <div
-        className={`grid ${getGridLayout()} gap-2 ${isMobile ? 'mt-2' : 'mt-20 md:mt-24'} max-w-7xl mx-auto`}
-        onTouchStart={handleTouchStart}
-    >
-        {/* ローカルビデオ */}
-        <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
-            <video
-                ref={ref => {
-                    if (ref) {
-                        ref.srcObject = localStreamRef.current;
-                    }
-                }}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-            />
-            <div className={`absolute bottom-2 left-2 right-2 flex items-center justify-between ${isMobile ? 'text-sm' : ''}`}>
-                <div className="bg-black/70 px-2 py-1 rounded-lg text-white">
-                    あなた ({userName})
-                </div>
-                <div className="flex gap-1">
-                    {!isAudioOn && (
-                        <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                    d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                />
-                            </svg>
-                            {!isMobile && <span>ミュート中</span>}
-                        </div>
-                    )}
-                    {!isCameraOn && (
-                        <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                    d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
-                                />
-                            </svg>
-                            {!isMobile && <span>カメラOFF</span>}
-                        </div>
-                    )}
-                </div>
             </div>
-        </div>
 
-        {/* リモートビデオ */}
-        {users.map(user => (
-            <div key={user.socketId} className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
-                <video
-                    ref={ref => {
-                        if (ref && user.stream) {
-                            ref.srcObject = user.stream;
-                        }
-                    }}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                />
-                <div className={`absolute bottom-2 left-2 right-2 flex items-center justify-between ${isMobile ? 'text-sm' : ''}`}>
-                    <div className="bg-black/70 px-2 py-1 rounded-lg text-white">
-                        {user.userName || '接続中...'}
-                    </div>
-                    <div className="flex gap-1">
-                        {user.isAudioOff && (
-                            <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                    />
-                                </svg>
-                            </div>
-                        )}
-                        {user.isCameraOff && (
-                            <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
-                                    />
-                                </svg>
-                            </div>
-                        )}
+            {/* ビデオグリッド */}
+            <div
+                className={`grid ${getGridLayout()} gap-2 ${isMobile ? 'mt-2' : 'mt-20 md:mt-24'} max-w-7xl mx-auto`}
+                onTouchStart={handleTouchStart}
+            >
+                {/* ローカルビデオ */}
+                <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
+                    <video
+                        ref={ref => {
+                            if (ref) {
+                                ref.srcObject = localStreamRef.current;
+                            }
+                        }}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                    />
+                    <div className={`absolute bottom-2 left-2 right-2 flex items-center justify-between ${isMobile ? 'text-sm' : ''}`}>
+                        <div className="bg-black/70 px-2 py-1 rounded-lg text-white">
+                            あなた ({userName})
+                        </div>
+                        <div className="flex gap-1">
+                            {!isAudioOn && (
+                                <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                                        />
+                                    </svg>
+                                    {!isMobile && <span>ミュート中</span>}
+                                </div>
+                            )}
+                            {!isCameraOn && (
+                                <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
+                                        />
+                                    </svg>
+                                    {!isMobile && <span>カメラOFF</span>}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
-        ))}
-    </div>
 
-    {
-        isMobile && showControls && (
-            <div className="fixed bottom-0 left-0 right-0 z-20 bg-black/70 py-2">
-                <div className="flex justify-around items-center">
-                    {/* カメラボタン */}
-                    <button
-                        onClick={toggleCamera}
-                        className={`
+                {/* リモートビデオ */}
+                {users.map(user => (
+                    <div key={user.socketId} className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
+                        <video
+                            ref={ref => {
+                                if (ref && user.stream) {
+                                    ref.srcObject = user.stream;
+                                }
+                            }}
+                            autoPlay
+                            playsInline
+                            className="w-full h-full object-cover"
+                        />
+                        <div className={`absolute bottom-2 left-2 right-2 flex items-center justify-between ${isMobile ? 'text-sm' : ''}`}>
+                            <div className="bg-black/70 px-2 py-1 rounded-lg text-white">
+                                {user.userName || '接続中...'}
+                            </div>
+                            <div className="flex gap-1">
+                                {user.isAudioOff && (
+                                    <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
+                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                                            />
+                                        </svg>
+                                    </div>
+                                )}
+                                {user.isCameraOff && (
+                                    <div className="bg-red-500 px-2 py-1 rounded-lg text-white flex items-center gap-1">
+                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M15 13l-3 3m0 0l-3-3m3 3v-6m0 0l-3 3m3-3l3 3"
+                                            />
+                                        </svg>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {isMobile && showControls && (
+                <div className="fixed bottom-0 left-0 right-0 z-20 bg-black/70 py-2">
+                    <div className="flex justify-around items-center">
+                        {/* カメラボタン */}
+                        <button
+                            onClick={toggleCamera}
+                            className={`
                     p-3 rounded-full 
                     ${isCameraOn ? 'bg-blue-600' : 'bg-red-600'} 
                     text-white
                 `}
-                        aria-label={isCameraOn ? 'カメラをオフにする' : 'カメラをオンにする'}
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                            />
-                        </svg>
-                    </button>
+                            aria-label={isCameraOn ? 'カメラをオフにする' : 'カメラをオンにする'}
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                />
+                            </svg>
+                        </button>
 
-                    {/* マイクボタン */}
-                    <button
-                        onClick={toggleAudio}
-                        className={`
+                        {/* マイクボタン */}
+                        <button
+                            onClick={toggleAudio}
+                            className={`
                     p-3 rounded-full
                     ${isAudioOn ? 'bg-blue-600' : 'bg-red-600'}
                     text-white
                 `}
-                        aria-label={isAudioOn ? 'マイクをオフにする' : 'マイクをオンにする'}
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                            />
-                        </svg>
-                    </button>
+                            aria-label={isAudioOn ? 'マイクをオフにする' : 'マイクをオンにする'}
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                />
+                            </svg>
+                        </button>
 
-                    {/* 録音ボタン */}
-                    <button
-                        onClick={toggleRecording}
-                        className={`
+                        {/* 録音ボタン */}
+                        <button
+                            onClick={toggleRecording}
+                            className={`
                     p-3 rounded-full 
                     ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
                     text-white
                 `}
-                        disabled={!isAudioOn}
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                            />
-                        </svg>
-                    </button>
+                            disabled={!isAudioOn}
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                />
+                            </svg>
+                        </button>
 
-                    {/* 背景設定ボタン */}
-                    <button
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="p-3 rounded-full bg-gray-600 text-white"
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                            />
-                        </svg>
-                    </button>
+                        {/* 背景設定ボタン */}
+                        <button
+                            onClick={() => setShowSettings(!showSettings)}
+                            className="p-3 rounded-full bg-gray-600 text-white"
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                />
+                            </svg>
+                        </button>
 
-                    {/* 退出ボタン */}
-                    <button
-                        onClick={() => {
-                            if (window.confirm('ビデオ通話を終了しますか？')) {
-                                leaveRoom();
-                            }
-                        }}
-                        className="p-3 rounded-full bg-red-600 text-white"
-                        aria-label="ビデオ通話を終了する"
-                    >
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                            />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* ステータスインジケーター */}
-                {isRecording && (
-                    <div className="mt-1 flex justify-center items-center">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
-                        <span className="text-white text-xs">録音中</span>
+                        {/* 退出ボタン */}
+                        <button
+                            onClick={() => {
+                                if (window.confirm('ビデオ通話を終了しますか？')) {
+                                    leaveRoom();
+                                }
+                            }}
+                            className="p-3 rounded-full bg-red-600 text-white"
+                            aria-label="ビデオ通話を終了する"
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                                />
+                            </svg>
+                        </button>
                     </div>
-                )}
-            </div>
-        )
-    }
-        </div >
+
+                    {/* ステータスインジケーター */}
+                    {isRecording && (
+                        <div className="mt-1 flex justify-center items-center">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
+                            <span className="text-white text-xs">録音中</span>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
