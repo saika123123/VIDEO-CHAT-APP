@@ -25,20 +25,6 @@ const configuration = {
     rtcpMuxPolicy: 'require'
 };
 
-// メディア制約
-const mediaConstraints = {
-    audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-    },
-    video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30 }
-    }
-};
-
 // 接続再試行の設定
 const RECONNECTION_CONFIG = {
     maxRetries: 3,
@@ -98,6 +84,72 @@ const createFakeStream = (userName) => {
     return stream;
 };
 
+// カメラなしのユーザー用プレースホルダー生成関数
+const createAudioOnlyPlaceholder = (userName) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    const stream = canvas.captureStream(5); // 低フレームレートで十分
+
+    // 初期描画
+    ctx.fillStyle = '#f3f4f6'; // bg-gray-100相当
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // ユーザー名と「カメラOFF」の表示
+    ctx.fillStyle = '#4b5563'; // text-gray-600相当
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(userName, canvas.width / 2, canvas.height / 2 - 30);
+
+    ctx.font = 'bold 32px sans-serif';
+    ctx.fillText('カメラOFF', canvas.width / 2, canvas.height / 2 + 30);
+
+    return stream;
+};
+
+// メディア取得関数の定義
+const getMediaStream = async (cameraEnabled = true) => {
+    try {
+        // カメラとマイクのオプション
+        const audioConstraints = {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        };
+
+        // カメラが有効な場合はビデオも要求
+        const constraints = {
+            audio: audioConstraints,
+            video: cameraEnabled ? {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+            } : false
+        };
+
+        // メディア取得
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        return stream;
+    } catch (err) {
+        console.error('Error accessing media devices:', err);
+
+        // カメラエラーの場合、音声のみで再試行
+        if (cameraEnabled && (
+            err.name === 'NotFoundError' ||
+            err.name === 'NotAllowedError' ||
+            err.name === 'NotReadableError' ||
+            err.name === 'OverconstrainedError'
+        )) {
+            console.log('Camera not available, trying audio only');
+            return getMediaStream(false);  // カメラなしで再帰呼び出し
+        }
+
+        throw new Error(`デバイスへのアクセスに失敗しました: ${err.message}`);
+    }
+};
+
 export default function VideoRoom({ roomId, userId }) {
     // State管理
     const [users, setUsers] = useState([]);
@@ -125,9 +177,9 @@ export default function VideoRoom({ roomId, userId }) {
     const reconnectionAttemptsRef = useRef({});
     const isReconnectingRef = useRef(false);
     const meetingRecorderRef = useRef(null);
+    const mountedRef = useRef(true);
 
     // 会話記録の開始/停止を切り替える関数
-    // toggleRecording関数の修正
     const toggleRecording = async () => {
         if (!isAudioOn) {
             alert('録音を開始するにはマイクをオンにしてください');
@@ -667,10 +719,70 @@ export default function VideoRoom({ roomId, userId }) {
     // カメラとマイクの制御
     const toggleCamera = () => {
         if (localStreamRef.current) {
-            const videoTrack = localStreamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !videoTrack.enabled;
-                setIsCameraOn(videoTrack.enabled);
+            const videoTracks = localStreamRef.current.getVideoTracks();
+
+            if (videoTracks.length > 0) {
+                // カメラがある場合は有効/無効を切り替え
+                videoTracks.forEach(track => {
+                    track.enabled = !track.enabled;
+                });
+                setIsCameraOn(videoTracks[0].enabled);
+            } else if (isCameraOn) {
+                // 既にプレースホルダーを使用している場合
+                setIsCameraOn(false);
+
+                // 既存の接続にカメラOFFを通知する処理があれば実行
+                // (必要に応じて実装)
+            } else {
+                // カメラをONにする場合、カメラへのアクセスを再試行
+                navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30 }
+                    }
+                })
+                    .then(videoStream => {
+                        const videoTrack = videoStream.getVideoTracks()[0];
+
+                        // 音声トラックを保持したまま、新しいビデオトラックを追加
+                        const newStream = new MediaStream();
+
+                        // 既存の音声トラックを追加
+                        localStreamRef.current.getAudioTracks().forEach(track => {
+                            newStream.addTrack(track);
+                        });
+
+                        // 新しいビデオトラックを追加
+                        newStream.addTrack(videoTrack);
+
+                        // 既存のストリームを置き換え
+                        videoStream.getVideoTracks().forEach(track => {
+                            track.stop();  // 元のストリームのビデオトラックを停止
+                        });
+
+                        localStreamRef.current = newStream;
+
+                        // 既存のピア接続にビデオトラックを追加
+                        Object.values(peersRef.current).forEach(peer => {
+                            const senders = peer.peerConnection.getSenders();
+                            const videoSender = senders.find(sender =>
+                                sender.track && sender.track.kind === 'video'
+                            );
+
+                            if (videoSender) {
+                                videoSender.replaceTrack(videoTrack);
+                            } else {
+                                peer.peerConnection.addTrack(videoTrack, newStream);
+                            }
+                        });
+
+                        setIsCameraOn(true);
+                    })
+                    .catch(err => {
+                        console.error('カメラへのアクセスに失敗しました:', err);
+                        alert('カメラの起動に失敗しました。設定を確認してください。');
+                    });
             }
         }
     };
@@ -726,14 +838,14 @@ export default function VideoRoom({ roomId, userId }) {
 
     // 初期化処理
     useEffect(() => {
-        let mounted = true;
+        mountedRef.current = true;
 
         const initialize = async () => {
             if (!roomId || !userId || userNameFetchedRef.current) return;
 
             try {
                 const name = await fetchUserName();
-                if (!mounted) return;
+                if (!mountedRef.current) return;
                 if (!name) throw new Error('ユーザー名の取得に失敗しました');
 
                 let stream;
@@ -741,14 +853,33 @@ export default function VideoRoom({ roomId, userId }) {
                     stream = createFakeStream(name);
                 } else {
                     try {
-                        stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+                        // MediaAPIを使ってカメラとマイクにアクセス
+                        stream = await getMediaStream();
+
+                        // カメラのトラックがない場合はカメラOFFとして扱う
+                        const hasVideoTrack = stream.getVideoTracks().length > 0;
+                        setIsCameraOn(hasVideoTrack);
+
+                        if (!hasVideoTrack) {
+                            // カメラなしの場合は音声ストリームのみ使用し、プレースホルダーを作成
+                            const audioStream = stream;
+                            const placeholderStream = createAudioOnlyPlaceholder(name);
+
+                            // オーディオトラックを追加
+                            if (audioStream.getAudioTracks().length > 0) {
+                                const audioTrack = audioStream.getAudioTracks()[0];
+                                placeholderStream.addTrack(audioTrack);
+                            }
+
+                            stream = placeholderStream;
+                        }
                     } catch (err) {
                         console.error('Error accessing media devices:', err);
                         throw new Error(`デバイスへのアクセスに失敗しました: ${err.message}`);
                     }
                 }
 
-                if (!mounted) {
+                if (!mountedRef.current) {
                     if (stream.stopFakeStream) stream.stopFakeStream();
                     stream.getTracks().forEach(track => track.stop());
                     return;
@@ -762,7 +893,7 @@ export default function VideoRoom({ roomId, userId }) {
                 initializeSocketConnection(name);
             } catch (error) {
                 console.error('Initialization error:', error);
-                if (!mounted) return;
+                if (!mountedRef.current) return;
                 setDeviceError(error.message);
                 setIsConnecting(false);
                 updateDebugInfo({ initError: error.message });
@@ -772,7 +903,7 @@ export default function VideoRoom({ roomId, userId }) {
         initialize();
 
         return () => {
-            mounted = false;
+            mountedRef.current = false;
             if (localStreamRef.current) {
                 if (localStreamRef.current.stopFakeStream) {
                     localStreamRef.current.stopFakeStream();
@@ -864,6 +995,69 @@ export default function VideoRoom({ roomId, userId }) {
                     <div className="text-sm text-gray-600">
                         カメラとマイクの使用許可が必要です
                     </div>
+
+                    {/* カメラなし参加オプション */}
+                    <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 
+                                bg-white p-6 rounded-xl shadow-xl text-center max-w-md w-full">
+                        <h3 className="text-xl font-bold mb-4">カメラへのアクセスが必要です</h3>
+                        <p className="mb-6">
+                            カメラとマイクへのアクセスを許可してください。
+                            カメラがない場合は「音声のみで参加」を選択できます。
+                        </p>
+                        <div className="flex flex-col gap-3">
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        // 音声のみで参加
+                                        const audioStream = await navigator.mediaDevices.getUserMedia({
+                                            audio: true,
+                                            video: false
+                                        });
+
+                                        if (!mountedRef.current) {
+                                            audioStream.getTracks().forEach(track => track.stop());
+                                            return;
+                                        }
+
+                                        // 音声ストリームをセット
+                                        localStreamRef.current = audioStream;
+
+                                        // プレースホルダーストリームを作成
+                                        const placeholderStream = createAudioOnlyPlaceholder(userName || userId);
+
+                                        // オーディオトラックを追加
+                                        if (audioStream.getAudioTracks().length > 0) {
+                                            const audioTrack = audioStream.getAudioTracks()[0];
+                                            placeholderStream.addTrack(audioTrack);
+                                        }
+
+                                        // プレースホルダーストリームを設定
+                                        localStreamRef.current = placeholderStream;
+                                        setIsCameraOn(false);
+
+                                        setIsConnecting(false);
+                                        userNameFetchedRef.current = true;
+                                        initializeSocketConnection(userName || userId);
+                                    } catch (error) {
+                                        console.error('音声デバイスへのアクセスエラー:', error);
+                                        setDeviceError('マイクへのアクセスに失敗しました。設定を確認してください。');
+                                        setIsConnecting(false);
+                                    }
+                                }}
+                                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 
+                                       transition-colors shadow-md"
+                            >
+                                音声のみで参加
+                            </button>
+                            <button
+                                onClick={() => window.location.href = '/yoriai/'}
+                                className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-bold 
+                                       hover:bg-gray-300 transition-colors"
+                            >
+                                キャンセル
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -886,24 +1080,6 @@ export default function VideoRoom({ roomId, userId }) {
                         参加者: {users.length + 1}人
                     </div>
                 </div>
-
-                {/* 招待URLコピーボタン */}
-                {/* <button
-                    onClick={copyInviteLink}
-                    className="
-                        bg-blue-600 text-white px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg 
-                        hover:bg-blue-700 transition-colors
-                        flex items-center gap-2 md:gap-3 text-base md:text-xl font-bold
-                    "
-                >
-                    <svg className="w-4 h-4 md:w-6 md:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2"
-                        />
-                    </svg>
-                    <span className="hidden md:inline">{showCopied ? 'コピーしました！' : '招待URLをコピー'}</span>
-                    <span className="md:hidden">{showCopied ? 'コピー完了' : '招待URL'}</span>
-                </button> */}
             </div>
 
             {/* ビデオグリッド */}
@@ -1143,19 +1319,6 @@ export default function VideoRoom({ roomId, userId }) {
                     socketRef={socketRef}
                 />
             </div>
-
-            {/* 会話記録を表示ボタン（録音中のみ表示）
-            {isRecording && !showRecorder && (
-                <button
-                    onClick={() => setShowRecorder(true)}
-                    className="fixed right-0 top-24 bg-green-600 text-white px-3 py-2 rounded-l-lg shadow-lg"
-                >
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-            )} */}
         </div>
     );
 }
