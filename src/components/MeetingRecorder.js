@@ -20,10 +20,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const isRecordingRef = useRef(false);
     const localSocketRef = useRef(null);
 
-    // 定数
-    const maxRetries = 3;
-    const retryDelay = 1000;
-
     // デバッグログ
     const logDebug = (message, data = null) => {
         const timestamp = new Date().toISOString();
@@ -32,7 +28,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
     // 親コンポーネントに公開するメソッド
     useImperativeHandle(ref, () => ({
-        // 録音開始メソッド
         startRecording: async () => {
             try {
                 if (!isAudioOn) {
@@ -47,7 +42,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 return false;
             }
         },
-        // 録音停止メソッド
         stopRecording: async () => {
             try {
                 await stopRecording(true);
@@ -57,7 +51,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 return false;
             }
         },
-        // 現在の録音状態を取得
         isCurrentlyRecording: () => isRecording
     }));
 
@@ -73,7 +66,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             return;
         }
 
-        // speech-dataイベントで送信された場合は、そのまま保存
+        // 音声データを保存キューに追加
         const speechData = {
             content: content.trim(),
             timestamp: new Date().toISOString(),
@@ -84,7 +77,9 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
         logDebug('Adding speech to queue:', speechData);
         pendingSpeechesRef.current.push(speechData);
-        void processSpeechQueue();
+
+        // 保存処理を非同期で実行
+        processSpeechQueue();
     }, []);
 
     // キューの処理
@@ -149,21 +144,22 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             console.error('Failed to save speech:', error);
             if (currentSpeech) {
                 currentSpeech.retryCount = (currentSpeech.retryCount || 0) + 1;
-                if (currentSpeech.retryCount >= maxRetries) {
+                if (currentSpeech.retryCount >= 3) { // maxRetries
                     logDebug(`Max retries reached for speech, discarding:`, currentSpeech);
                     pendingSpeechesRef.current.shift();
-                    setError(`Failed to save speech after ${maxRetries} attempts`);
+                    setError(`Failed to save speech after 3 attempts`);
                 } else {
                     logDebug(`Retry attempt ${currentSpeech.retryCount} for speech`);
                 }
             }
         } finally {
             processingRef.current = false;
+            // 連続処理のために残りのキューがあれば処理を続行
             if (pendingSpeechesRef.current.length > 0) {
-                setTimeout(processSpeechQueue, retryDelay);
+                setTimeout(processSpeechQueue, 1000); // retryDelay
             }
         }
-    }, [maxRetries]);
+    }, []);
 
     // 音声認識の初期化
     const initializeSpeechRecognition = useCallback(() => {
@@ -245,7 +241,14 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
         // 他の参加者からの音声データを受信
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
-            if (!isRecordingRef.current) return;
+            logDebug(`Received remote speech from ${speakerName}: ${content}`);
+
+            if (!isRecordingRef.current || !meetingIdRef.current) {
+                logDebug('Recording not active, ignoring remote speech');
+                return;
+            }
+
+            // ここが重要: リモート音声を保存キューに追加
             saveSpeechToQueue(content, speakerId, speakerName);
         };
 
@@ -277,6 +280,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 if (transcript) {
                     // 他の参加者に音声データを送信
                     if (socketRef.current) {
+                        logDebug(`Emitting speech data: ${transcript}`);
                         socketRef.current.emit('speech-data', {
                             content: transcript,
                             userId,
