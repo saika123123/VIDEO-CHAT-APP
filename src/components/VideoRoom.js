@@ -249,16 +249,12 @@ export default function VideoRoom({ roomId, userId }) {
             return 'grid-cols-1 md:grid-cols-2';
         } else if (totalParticipants <= 4) {
             return 'grid-cols-2';
-        } else if (totalParticipants <= 6) {
-            return 'grid-cols-2 md:grid-cols-3';
         } else if (totalParticipants <= 9) {
             return 'grid-cols-3';
-        } else if (totalParticipants <= 12) {
-            return 'grid-cols-3 md:grid-cols-4';
         } else if (totalParticipants <= 16) {
             return 'grid-cols-4';
         } else {
-            return 'grid-cols-4 md:grid-cols-5';
+            return 'grid-cols-5';
         }
     };
     // WebRTC接続管理
@@ -1065,7 +1061,7 @@ export default function VideoRoom({ roomId, userId }) {
 
     return (
         <div
-            className="min-h-screen p-4"
+            className="min-h-screen p-1 md:p-2"
             style={{
                 backgroundImage: `url(${background})`,
                 backgroundSize: 'cover',
@@ -1073,18 +1069,16 @@ export default function VideoRoom({ roomId, userId }) {
             }}
         >
             {/* ヘッダー部分 */}
-            <div className="fixed top-2 left-2 z-10 flex flex-row items-center gap-2">
-                {/* 参加者数 - よりコンパクトに */}
-                <div className="bg-white/90 text-gray-800 px-3 py-1 rounded-lg shadow-md">
-                    <div className="text-sm font-medium">
-                        参加者: {users.length + 1}人
-                    </div>
+            <div className="fixed top-1 left-1 z-10">
+                {/* 参加者数 - 最小化 */}
+                <div className="bg-black/40 text-white px-2 py-1 rounded-md text-xs">
+                    👥 {users.length + 1}人
                 </div>
             </div>
 
             {/* ビデオグリッド */}
-            <div className={`grid ${getGridLayout()} gap-3 md:gap-4 mt-14 md:mt-16 mb-32 max-w-7xl mx-auto overflow-y-auto`}
-                style={{ maxHeight: 'calc(100vh - 150px)' }}>
+            <div className={`grid ${getGridLayout()} gap-2 mt-12 mb-24 w-full max-w-full mx-auto overflow-y-auto`}
+                style={{ maxHeight: 'calc(100vh - 120px)' }}>
                 {/* ローカルビデオ */}
                 <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
                     <video
@@ -1172,8 +1166,8 @@ export default function VideoRoom({ roomId, userId }) {
             </div>
 
             {/* コントロールパネル */}
-            <div className="fixed bottom-4 md:bottom-8 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-5xl px-2">
-                <div className="flex flex-wrap justify-center items-center gap-2 md:gap-6 bg-white/90 px-2 md:px-8 py-3 md:py-6 rounded-2xl shadow-lg">
+            <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-20 w-auto">
+                <div className="flex flex-wrap justify-center items-center gap-2 bg-black/60 px-3 py-2 rounded-full shadow-lg">
                     {/* カメラボタン */}
                     <div className="flex flex-col items-center">
                         <button
