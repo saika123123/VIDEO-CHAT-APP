@@ -77,7 +77,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
         logDebug('Adding speech to queue:', speechData);
         pendingSpeechesRef.current.push(speechData);
-
+        
         // 保存処理を非同期で実行
         processSpeechQueue();
     }, []);
@@ -242,12 +242,12 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         // 他の参加者からの音声データを受信
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
             logDebug(`Received remote speech from ${speakerName}: ${content}`);
-
+            
             if (!isRecordingRef.current || !meetingIdRef.current) {
                 logDebug('Recording not active, ignoring remote speech');
                 return;
             }
-
+            
             // ここが重要: リモート音声を保存キューに追加
             saveSpeechToQueue(content, speakerId, speakerName);
         };

@@ -1073,17 +1073,18 @@ export default function VideoRoom({ roomId, userId }) {
             }}
         >
             {/* ヘッダー部分 */}
-            <div className="fixed top-2 md:top-6 left-2 md:left-6 z-10 flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-6">
-                {/* 参加者数 */}
-                <div className="bg-white/90 text-gray-800 px-3 md:px-6 py-2 md:py-4 rounded-xl shadow-lg">
-                    <div className="text-base md:text-xl font-bold">
+            <div className="fixed top-2 left-2 z-10 flex flex-row items-center gap-2">
+                {/* 参加者数 - よりコンパクトに */}
+                <div className="bg-white/90 text-gray-800 px-3 py-1 rounded-lg shadow-md">
+                    <div className="text-sm font-medium">
                         参加者: {users.length + 1}人
                     </div>
                 </div>
             </div>
 
             {/* ビデオグリッド */}
-            <div className={`grid ${getGridLayout()} gap-3 md:gap-4 mt-20 md:mt-24 max-w-7xl mx-auto`}>
+            <div className={`grid ${getGridLayout()} gap-3 md:gap-4 mt-14 md:mt-16 mb-32 max-w-7xl mx-auto overflow-y-auto`}
+                style={{ maxHeight: 'calc(100vh - 150px)' }}>
                 {/* ローカルビデオ */}
                 <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-lg h-auto">
                     <video
