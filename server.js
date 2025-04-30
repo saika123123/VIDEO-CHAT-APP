@@ -12,16 +12,18 @@ app.use(cors());
 
 const io = new Server(server, {
     cors: {
-      origin: "*", // すべてのオリジンからのアクセスを許可
-      methods: ["GET", "POST"],
-      credentials: true
+        origin: "*", // すべてのオリジンからのアクセスを許可
+        methods: ["GET", "POST"],
+        credentials: true
     },
     // デフォルトで/socket.io/パスを使用
     transports: ['polling', 'websocket'] // ポーリングとWebSocket両方対応
-  });
+});
 
 // ルームごとの参加者を管理するMap
 const rooms = new Map();
+// アクティブな録音セッションを管理するMap
+const activeRecordings = new Map();
 
 // デバッグ用の関数
 const logRoomState = (roomId) => {
@@ -54,6 +56,15 @@ io.on('connection', (socket) => {
 
     // 現在のルーム状態をログ出力
     logRoomState(roomId);
+
+    // アクティブな録音があれば通知
+    if (activeRecordings.has(roomId)) {
+        const recordingInfo = activeRecordings.get(roomId);
+        socket.emit('recording-started', {
+            meetingId: recordingInfo.meetingId,
+            initiatorName: recordingInfo.initiatorName
+        });
+    }
 
     // ルーム参加者リストを全員に送信
     io.to(roomId).emit('users', Array.from(rooms.get(roomId).values()));
@@ -92,6 +103,8 @@ io.on('connection', (socket) => {
 
     // 音声データの中継
     socket.on('speech-data', (data) => {
+        console.log(`Received speech data from ${data.userName} (${data.userId})`);
+
         // 送信者以外のルーム内の全員に転送
         socket.to(roomId).emit('speech-data', {
             content: data.content,
@@ -101,15 +114,37 @@ io.on('connection', (socket) => {
     });
 
     // 録音開始イベント
-    socket.on('recording-start', ({ meetingId, roomId }) => {
+    socket.on('recording-start', ({ meetingId, roomId, initiatorId, initiatorName }) => {
+        console.log(`Recording started in room ${roomId} by ${initiatorName} (${initiatorId}), meetingId: ${meetingId}`);
+
+        // アクティブな録音情報を保存
+        activeRecordings.set(roomId, {
+            meetingId,
+            initiatorId,
+            initiatorName,
+            startTime: new Date()
+        });
+
         // 同じルームの全員に録音開始を通知
-        io.to(roomId).emit('recording-started', { meetingId });
+        io.to(roomId).emit('recording-started', {
+            meetingId,
+            initiatorId,
+            initiatorName
+        });
     });
 
     // 録音停止イベント
-    socket.on('recording-stop', ({ meetingId, roomId }) => {
+    socket.on('recording-stop', ({ meetingId, roomId, initiatorId }) => {
+        console.log(`Recording stopped in room ${roomId} by ${initiatorId}, meetingId: ${meetingId}`);
+
+        // アクティブな録音情報を削除
+        activeRecordings.delete(roomId);
+
         // 同じルームの全員に録音停止を通知
-        io.to(roomId).emit('recording-stopped', { meetingId });
+        io.to(roomId).emit('recording-stopped', {
+            meetingId,
+            initiatorId
+        });
     });
 
     // 切断時の処理
@@ -129,10 +164,24 @@ io.on('connection', (socket) => {
 
             console.log(`Remaining users in room ${roomId}:`, remainingUsers);
 
+            // このユーザーが録音の開始者で、まだ録音中の場合は録音を停止
+            if (activeRecordings.has(roomId) &&
+                activeRecordings.get(roomId).initiatorId === userId) {
+                console.log(`Recording initiator disconnected, stopping recording in room ${roomId}`);
+
+                io.to(roomId).emit('recording-stopped', {
+                    meetingId: activeRecordings.get(roomId).meetingId,
+                    initiatorId: userId
+                });
+
+                activeRecordings.delete(roomId);
+            }
+
             // ルームが空になった場合は削除
             if (rooms.get(roomId).size === 0) {
                 console.log(`Removing empty room: ${roomId}`);
                 rooms.delete(roomId);
+                activeRecordings.delete(roomId);
             }
         }
     });
@@ -144,6 +193,7 @@ setInterval(() => {
         if (participants.size === 0) {
             console.log(`Cleaning up empty room: ${roomId}`);
             rooms.delete(roomId);
+            activeRecordings.delete(roomId);
         }
     });
 }, 60000); // 1分ごとにチェック

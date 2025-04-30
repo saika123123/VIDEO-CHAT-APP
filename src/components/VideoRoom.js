@@ -167,6 +167,7 @@ export default function VideoRoom({ roomId, userId }) {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
+
     // Refs
     const socketRef = useRef();
     const peersRef = useRef({});
@@ -935,14 +936,14 @@ export default function VideoRoom({ roomId, userId }) {
         if (!socketRef.current) return;
 
         // 他の誰かが録音を開始した時のハンドラ
-        const handleRecordingStarted = ({ meetingId, initiatorName }) => {
-            console.log(`Recording started by ${initiatorName}`);
+        const handleRecordingStarted = ({ meetingId, initiatorId, initiatorName }) => {
+            console.log(`Recording started by ${initiatorName || initiatorId}`);
             setIsRecording(true);
-            setRecordingInitiator(initiatorName);
+            setRecordingInitiator(initiatorName || initiatorId);
         };
 
         // 他の誰かが録音を停止した時のハンドラ
-        const handleRecordingStopped = () => {
+        const handleRecordingStopped = ({ initiatorId }) => {
             console.log('Recording stopped');
             setIsRecording(false);
             setRecordingInitiator(null);
