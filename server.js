@@ -33,6 +33,14 @@ const logRoomState = (roomId) => {
     }
 };
 
+// デバッグ用の録音状態ログ関数
+const logRecordingState = () => {
+    console.log('Active recordings:');
+    activeRecordings.forEach((data, roomId) => {
+        console.log(`Room ${roomId}: Meeting ${data.meetingId}, Initiator: ${data.initiatorName}`);
+    });
+};
+
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
 
@@ -60,8 +68,11 @@ io.on('connection', (socket) => {
     // アクティブな録音があれば通知
     if (activeRecordings.has(roomId)) {
         const recordingInfo = activeRecordings.get(roomId);
+        console.log(`Notifying new user ${userName} about active recording:`, recordingInfo);
+
         socket.emit('recording-started', {
             meetingId: recordingInfo.meetingId,
+            initiatorId: recordingInfo.initiatorId,
             initiatorName: recordingInfo.initiatorName
         });
     }
@@ -103,7 +114,7 @@ io.on('connection', (socket) => {
 
     // 音声データの中継
     socket.on('speech-data', (data) => {
-        console.log(`Received speech data from ${data.userName} (${data.userId})`);
+        console.log(`Received speech data from ${data.userName} (${data.userId}): "${data.content.substring(0, 20)}..."`);
 
         // 送信者以外のルーム内の全員に転送
         socket.to(roomId).emit('speech-data', {
@@ -125,6 +136,8 @@ io.on('connection', (socket) => {
             startTime: new Date()
         });
 
+        logRecordingState();
+
         // 同じルームの全員に録音開始を通知
         io.to(roomId).emit('recording-started', {
             meetingId,
@@ -139,6 +152,8 @@ io.on('connection', (socket) => {
 
         // アクティブな録音情報を削除
         activeRecordings.delete(roomId);
+
+        logRecordingState();
 
         // 同じルームの全員に録音停止を通知
         io.to(roomId).emit('recording-stopped', {
@@ -164,24 +179,35 @@ io.on('connection', (socket) => {
 
             console.log(`Remaining users in room ${roomId}:`, remainingUsers);
 
-            // このユーザーが録音の開始者で、まだ録音中の場合は録音を停止
+            // このユーザーが録音の開始者で、まだ録音中の場合でも、録音は継続する
+            // (他のユーザーがいる限り録音は継続し、誰でも停止できる)
             if (activeRecordings.has(roomId) &&
                 activeRecordings.get(roomId).initiatorId === userId) {
-                console.log(`Recording initiator disconnected, stopping recording in room ${roomId}`);
+                console.log(`Recording initiator disconnected, but recording continues in room ${roomId}`);
 
-                io.to(roomId).emit('recording-stopped', {
-                    meetingId: activeRecordings.get(roomId).meetingId,
-                    initiatorId: userId
+                // 録音開始者が退出しても録音は続く
+                // ただし、録音開始者の名前を「不明」に変更
+                const recordingInfo = activeRecordings.get(roomId);
+                recordingInfo.initiatorName = `${userName}(退出済み)`;
+                activeRecordings.set(roomId, recordingInfo);
+
+                // 録音状態の更新を通知
+                io.to(roomId).emit('recording-initiator-left', {
+                    meetingId: recordingInfo.meetingId,
+                    formerInitiatorId: userId,
+                    formerInitiatorName: userName
                 });
-
-                activeRecordings.delete(roomId);
             }
 
-            // ルームが空になった場合は削除
+            // ルームが空になった場合は削除と録音データのクリーンアップ
             if (rooms.get(roomId).size === 0) {
                 console.log(`Removing empty room: ${roomId}`);
                 rooms.delete(roomId);
-                activeRecordings.delete(roomId);
+
+                if (activeRecordings.has(roomId)) {
+                    console.log(`Cleaning up recording for empty room: ${roomId}`);
+                    activeRecordings.delete(roomId);
+                }
             }
         }
     });
@@ -194,6 +220,31 @@ setInterval(() => {
             console.log(`Cleaning up empty room: ${roomId}`);
             rooms.delete(roomId);
             activeRecordings.delete(roomId);
+        }
+    });
+
+    // アクティブな録音のチェック
+    activeRecordings.forEach((recordingInfo, roomId) => {
+        // ルームが存在しない場合は録音情報をクリーンアップ
+        if (!rooms.has(roomId)) {
+            console.log(`Cleaning up recording for non-existent room: ${roomId}`);
+            activeRecordings.delete(roomId);
+            return;
+        }
+
+        // 録音開始から長時間経過した場合もチェック (例: 3時間以上)
+        const now = new Date();
+        const threeHoursInMs = 3 * 60 * 60 * 1000;
+        if (now - recordingInfo.startTime > threeHoursInMs) {
+            console.log(`Cleaning up long-running recording in room: ${roomId}`);
+            activeRecordings.delete(roomId);
+
+            // 録音が自動停止されたことを通知
+            io.to(roomId).emit('recording-stopped', {
+                meetingId: recordingInfo.meetingId,
+                initiatorId: 'system',
+                reason: 'timeout'
+            });
         }
     });
 }, 60000); // 1分ごとにチェック

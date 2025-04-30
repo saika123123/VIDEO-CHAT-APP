@@ -166,6 +166,8 @@ export default function VideoRoom({ roomId, userId }) {
     const [showRecorder, setShowRecorder] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingInitiator, setRecordingInitiator] = useState(null);
+    const [recordingErrorMessage, setRecordingErrorMessage] = useState(null);
+
 
 
     // Refs
@@ -187,26 +189,32 @@ export default function VideoRoom({ roomId, userId }) {
             return;
         }
 
-        console.log("現在の録音状態:", isRecording); // デバッグ用
+        console.log("現在の録音状態:", isRecording);
 
         try {
+            setRecordingErrorMessage(null);
+
             if (isRecording) {
                 // 録音停止
+                console.log("録音停止を開始します");
                 await meetingRecorderRef.current?.stopRecording();
                 setIsRecording(false);
-                console.log("録音停止しました"); // デバッグ用
+                console.log("録音停止しました");
             } else {
                 // 録音開始
+                console.log("録音開始を試みます");
                 const success = await meetingRecorderRef.current?.startRecording();
                 if (success) {
                     setIsRecording(true);
-                    console.log("録音開始しました"); // デバッグ用
+                    console.log("録音開始しました");
                 } else {
-                    console.error("録音開始に失敗しました"); // デバッグ用
+                    console.error("録音開始に失敗しました");
+                    setRecordingErrorMessage("録音の開始に失敗しました。マイクの設定を確認してください。");
                 }
             }
         } catch (error) {
-            console.error("録音操作中にエラーが発生しました:", error); // デバッグ用
+            console.error("録音操作中にエラーが発生しました:", error);
+            setRecordingErrorMessage(`録音エラー: ${error.message}`);
         }
     };
 
@@ -788,6 +796,7 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
+    // マイクをオフにする際の処理を修正
     const toggleAudio = () => {
         if (localStreamRef.current) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
@@ -795,9 +804,21 @@ export default function VideoRoom({ roomId, userId }) {
                 audioTrack.enabled = !audioTrack.enabled;
                 setIsAudioOn(audioTrack.enabled);
 
-                // マイクをオフにする際、録音中なら停止する
+                // マイクをオフにする際、録音中かつ自分が開始者なら警告を表示
                 if (!audioTrack.enabled && isRecording) {
-                    toggleRecording();
+                    if (recordingInitiator === userName) {
+                        if (window.confirm('録音中にマイクをオフにすると、あなたの音声は記録されなくなります。続けますか？')) {
+                            // ユーザーが確認した場合は処理を続行
+                        } else {
+                            // キャンセルした場合はマイクを再度オンに
+                            audioTrack.enabled = true;
+                            setIsAudioOn(true);
+                            return;
+                        }
+                    } else {
+                        // 他の人が開始した録音の場合は警告のみ
+                        alert('録音中にマイクをオフにすると、あなたの音声は記録されなくなります');
+                    }
                 }
             }
         }
@@ -810,7 +831,13 @@ export default function VideoRoom({ roomId, userId }) {
 
             // もし録音中なら、まず録音を停止して議事録を保存
             if (isRecording) {
-                await meetingRecorderRef.current?.stopRecording();
+                try {
+                    await meetingRecorderRef.current?.stopRecording();
+                    console.log("退出前に録音を停止しました");
+                } catch (error) {
+                    console.error("退出時の録音停止エラー:", error);
+                    // エラーがあっても退出処理は続行
+                }
             }
 
             // メディアストリームの停止
@@ -829,11 +856,11 @@ export default function VideoRoom({ roomId, userId }) {
             }
 
             // ホームページへリダイレクト
-            window.location.href = '/online-circle/login';
+            window.location.href = '/yoriai';
         } catch (error) {
             console.error('Error during room exit:', error);
             // エラーが発生してもホームページへ移動
-            window.location.href = '/yoriai/';
+            window.location.href = '/yoriai';
         }
     };
 
@@ -940,23 +967,32 @@ export default function VideoRoom({ roomId, userId }) {
             console.log(`Recording started by ${initiatorName || initiatorId}`);
             setIsRecording(true);
             setRecordingInitiator(initiatorName || initiatorId);
+            setRecordingErrorMessage(null);
         };
 
         // 他の誰かが録音を停止した時のハンドラ
-        const handleRecordingStopped = ({ initiatorId }) => {
-            console.log('Recording stopped');
+        const handleRecordingStopped = ({ meetingId, initiatorId }) => {
+            console.log(`Recording stopped by ${initiatorId}`);
             setIsRecording(false);
             setRecordingInitiator(null);
+        };
+
+        // 録音開始者が退出した場合のハンドラ
+        const handleRecordingInitiatorLeft = ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
+            console.log(`Recording initiator ${formerInitiatorName} left, but recording continues`);
+            setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
         };
 
         // イベントリスナーの登録
         socketRef.current.on('recording-started', handleRecordingStarted);
         socketRef.current.on('recording-stopped', handleRecordingStopped);
+        socketRef.current.on('recording-initiator-left', handleRecordingInitiatorLeft);
 
         return () => {
             if (socketRef.current) {
                 socketRef.current.off('recording-started', handleRecordingStarted);
                 socketRef.current.off('recording-stopped', handleRecordingStopped);
+                socketRef.current.off('recording-initiator-left', handleRecordingInitiatorLeft);
             }
         };
     }, [socketRef?.current]);
@@ -1232,8 +1268,10 @@ export default function VideoRoom({ roomId, userId }) {
             ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
             text-white hover:opacity-90 transition-opacity shadow-lg
             flex flex-col items-center gap-2
+            ${!isAudioOn ? 'opacity-50 cursor-not-allowed' : ''}
         `}
                             disabled={!isAudioOn}
+                            title={!isAudioOn ? 'マイクをオンにしてから録音してください' : ''}
                         >
                             <svg className="w-6 h-6 md:w-10 md:h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -1247,6 +1285,11 @@ export default function VideoRoom({ roomId, userId }) {
                         {isRecording && recordingInitiator && (
                             <span className="text-xs text-red-600 font-medium">
                                 {recordingInitiator === userName ? 'あなたが開始' : `${recordingInitiator}が開始`}
+                            </span>
+                        )}
+                        {recordingErrorMessage && (
+                            <span className="text-xs text-red-600 absolute bottom-16 bg-white p-2 rounded shadow-md">
+                                {recordingErrorMessage}
                             </span>
                         )}
                     </div>
