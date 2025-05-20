@@ -7,6 +7,7 @@ export default function QRCodePage() {
     const router = useRouter();
     const [roomId, setRoomId] = useState('');
     const [inviteUrl, setInviteUrl] = useState('');
+    const [qrCodeUrl, setQrCodeUrl] = useState(''); // Google Chart API用のURL
     const [copied, setCopied] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -21,7 +22,13 @@ export default function QRCodePage() {
         if (roomId && typeof window !== 'undefined') {
             // 正しい招待URLを生成（クエリパラメータとして'room'を付与）
             const baseUrl = window.location.origin;
-            setInviteUrl(`${baseUrl}/yoriai?room=${roomId}`);
+            const fullInviteUrl = `${baseUrl}/yoriai?room=${roomId}`;
+            setInviteUrl(fullInviteUrl);
+            
+            // Google Chart APIでQRコードを生成
+            // URLエンコードして正しく渡す
+            const encodedUrl = encodeURIComponent(fullInviteUrl);
+            setQrCodeUrl(`https://chart.googleapis.com/chart?cht=qr&chs=250x250&chl=${encodedUrl}&chld=L|1`);
         }
     }, [roomId]);
 
@@ -64,7 +71,8 @@ export default function QRCodePage() {
 
                     <div className="flex flex-col items-center">
                         <div className="bg-white p-4 rounded-xl border-2 border-gray-200 mb-6">
-                            <QRCodeSVG url={inviteUrl} size={250} />
+                            {/* Google Chart APIを使用してQRコードを表示 */}
+                            {qrCodeUrl && <img src={qrCodeUrl} alt="QRコード" width="250" height="250" />}
                         </div>
 
                         <p className="text-gray-600 text-center mb-6">
@@ -110,121 +118,3 @@ export default function QRCodePage() {
         </div>
     );
 }
-
-// QRコードを描画するSVGコンポーネント
-const QRCodeSVG = ({ url, size = 250 }) => {
-    // QRコードに必要なパターン（位置検出パターンなど）を生成
-    const [qrMatrix, setQrMatrix] = useState([]);
-    const moduleCount = 33; // QRコードのサイズ（セル数）
-
-    useEffect(() => {
-        // URLの文字列を使って一意のパターンを生成（実際のQRコードアルゴリズムではない）
-        const generateQRPattern = () => {
-            const matrix = Array(moduleCount).fill().map(() => Array(moduleCount).fill(0));
-
-            // 位置検出パターン（左上）
-            for (let i = 0; i < 7; i++) {
-                for (let j = 0; j < 7; j++) {
-                    // 外枠と内側の四角形
-                    if (i === 0 || i === 6 || j === 0 || j === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4)) {
-                        matrix[i][j] = 1;
-                    }
-                }
-            }
-
-            // 位置検出パターン（右上）
-            for (let i = 0; i < 7; i++) {
-                for (let j = moduleCount - 7; j < moduleCount; j++) {
-                    if (i === 0 || i === 6 || j === moduleCount - 7 || j === moduleCount - 1 ||
-                        (i >= 2 && i <= 4 && j >= moduleCount - 5 && j <= moduleCount - 3)) {
-                        matrix[i][j] = 1;
-                    }
-                }
-            }
-
-            // 位置検出パターン（左下）
-            for (let i = moduleCount - 7; i < moduleCount; i++) {
-                for (let j = 0; j < 7; j++) {
-                    if (i === moduleCount - 7 || i === moduleCount - 1 || j === 0 || j === 6 ||
-                        (i >= moduleCount - 5 && i <= moduleCount - 3 && j >= 2 && j <= 4)) {
-                        matrix[i][j] = 1;
-                    }
-                }
-            }
-
-            // タイミングパターン
-            for (let i = 8; i < moduleCount - 8; i++) {
-                if (i % 2 === 0) {
-                    matrix[6][i] = 1;
-                    matrix[i][6] = 1;
-                }
-            }
-
-            // データパターンのシミュレーション（URLをハッシュ化してパターンに変換）
-            let hashValue = 0;
-            for (let i = 0; i < url.length; i++) {
-                hashValue += url.charCodeAt(i);
-            }
-
-            // データ部分にパターンを生成
-            for (let i = 8; i < moduleCount - 8; i++) {
-                for (let j = 8; j < moduleCount - 8; j++) {
-                    if ((i * j + hashValue) % 4 === 0 ||
-                        ((i + j) * url.length) % 5 === 0 ||
-                        (i * j) % 7 === hashValue % 7) {
-                        matrix[i][j] = 1;
-                    }
-                }
-            }
-
-            // ルームIDを反映したパターン（より一意にするため）
-            const roomIdMatch = url.match(/room=([^&]+)/);
-            if (roomIdMatch && roomIdMatch[1]) {
-                const roomId = roomIdMatch[1];
-                for (let i = 0; i < roomId.length; i++) {
-                    const char = roomId.charCodeAt(i);
-                    const row = (char % 10) + 10;
-                    const col = (char % 15) + 10;
-                    if (row < moduleCount && col < moduleCount) {
-                        matrix[row][col] = 1;
-                        // 周囲にもパターンを追加
-                        if (row + 1 < moduleCount) matrix[row + 1][col] = 1;
-                        if (col + 1 < moduleCount) matrix[row][col + 1] = 1;
-                    }
-                }
-            }
-
-            return matrix;
-        };
-
-        setQrMatrix(generateQRPattern());
-    }, [url]);
-
-    // モジュールサイズの計算
-    const moduleSize = size / moduleCount;
-
-    return (
-        <svg
-            viewBox={`0 0 ${size} ${size}`}
-            width={size}
-            height={size}
-            style={{ background: '#fff' }}
-        >
-            {qrMatrix.map((row, rowIndex) => (
-                row.map((cell, colIndex) => (
-                    cell === 1 && (
-                        <rect
-                            key={`${rowIndex}-${colIndex}`}
-                            x={colIndex * moduleSize}
-                            y={rowIndex * moduleSize}
-                            width={moduleSize}
-                            height={moduleSize}
-                            fill="#000"
-                            shapeRendering="crispEdges"
-                        />
-                    )
-                ))
-            ))}
-        </svg>
-    );
-};
