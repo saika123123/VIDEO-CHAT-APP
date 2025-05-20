@@ -1,5 +1,6 @@
 'use client';
 import { useParams, useRouter } from 'next/navigation';
+import { QRCodeSVG } from 'qrcode.react'; // 正規のQRコードライブラリをインポート
 import { useEffect, useState } from 'react';
 
 export default function QRCodePage() {
@@ -7,7 +8,6 @@ export default function QRCodePage() {
     const router = useRouter();
     const [roomId, setRoomId] = useState('');
     const [inviteUrl, setInviteUrl] = useState('');
-    const [qrCodeUrl, setQrCodeUrl] = useState(''); // Google Chart API用のURL
     const [copied, setCopied] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -22,13 +22,7 @@ export default function QRCodePage() {
         if (roomId && typeof window !== 'undefined') {
             // 正しい招待URLを生成（クエリパラメータとして'room'を付与）
             const baseUrl = window.location.origin;
-            const fullInviteUrl = `${baseUrl}/yoriai?room=${roomId}`;
-            setInviteUrl(fullInviteUrl);
-            
-            // Google Chart APIでQRコードを生成
-            // URLエンコードして正しく渡す
-            const encodedUrl = encodeURIComponent(fullInviteUrl);
-            setQrCodeUrl(`https://chart.googleapis.com/chart?cht=qr&chs=250x250&chl=${encodedUrl}&chld=L|1`);
+            setInviteUrl(`${baseUrl}/yoriai?room=${roomId}`);
         }
     }, [roomId]);
 
@@ -71,8 +65,15 @@ export default function QRCodePage() {
 
                     <div className="flex flex-col items-center">
                         <div className="bg-white p-4 rounded-xl border-2 border-gray-200 mb-6">
-                            {/* Google Chart APIを使用してQRコードを表示 */}
-                            {qrCodeUrl && <img src={qrCodeUrl} alt="QRコード" width="250" height="250" />}
+                            {/* ライブラリによる正規のQRコード生成 */}
+                            <QRCodeSVG
+                                value={inviteUrl}
+                                size={250}
+                                bgColor={"#ffffff"}
+                                fgColor={"#000000"}
+                                level={"L"}
+                                includeMargin={true}
+                            />
                         </div>
 
                         <p className="text-gray-600 text-center mb-6">
