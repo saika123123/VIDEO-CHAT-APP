@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import BackgroundSelector from './BackgroundSelector';
-import InvitationButton from './InvitationButton';
 import MeetingRecorder from './MeetingRecorder';
 
 // WebRTC設定の改善
@@ -1302,8 +1301,8 @@ export default function VideoRoom({ roomId, userId }) {
                         <span className="mt-1 text-xs md:text-sm font-bold">背景</span>
                     </div>
 
-                    {/* 招待ボタンを追加 */}
-                    <InvitationButton roomId={roomId} userName={userName} />
+                    {/* 招待ボタンを追加
+                    <InvitationButton roomId={roomId} userName={userName} /> */}
                     
                     {/* 区切り線 */}
                     <div className="hidden md:block h-10 md:h-16 w-px bg-gray-300 mx-1 md:mx-2" />
