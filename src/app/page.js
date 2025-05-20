@@ -12,24 +12,36 @@ function HomeContent() {
 
 
 
-  // QRコード経由の場合、自動的にユーザー名を生成
-  useEffect(() => {
-    const generateRandomName = () => {
-      const guestNames = [
-        'ゲスト', 'お客様', '参加者', '友人',
-        '太郎', '花子', '次郎', '佳子',
-        '幸子', '一郎', '美子', '健太'
-      ];
-
-      return `${guestNames[Math.floor(Math.random() * guestNames.length)]}_${Math.floor(1000 + Math.random() * 9000)}`;
-    };
-
-    if (invitedRoomId) {
-      // QRコード経由の場合、ランダムにユーザー名を生成
-      setName(generateRandomName());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invitedRoomId]);
+// QRコード経由の場合、自動的にユーザー名を生成
+useEffect(() => {
+  const generateRandomAnimalName = () => {
+    // 動物の名前の配列
+    const animalNames = [
+      'クマ', 'ウサギ', 'キツネ', 'タヌキ', 'ネコ', 'イヌ', 'パンダ', 
+      'ゾウ', 'キリン', 'ライオン', 'トラ', 'サル', 'リス', 'ハムスター', 
+      'ペンギン', 'カメ', 'コアラ', 'カンガルー', 'シカ', 'キツネ',
+      'カバ', 'サイ', 'ヒツジ', 'ウマ', 'ヒヨコ', 'ニワトリ', 'アヒル'
+    ];
+    
+    // 形容詞の配列
+    const adjectives = [
+      '茶色い', '白い', '黒い', '赤い', '青い', '黄色い', '緑の'
+    ];
+    
+    // ランダムに形容詞と動物名を選ぶ
+    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomAnimal = animalNames[Math.floor(Math.random() * animalNames.length)];
+    
+    // 動物の名前を生成（例: 「元気なウサギ」）
+    return `${randomAdjective}${randomAnimal}`;
+  };
+  
+  if (invitedRoomId) {
+    // QRコード経由の場合、ランダムに動物の名前を生成
+    setName(generateRandomAnimalName());
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [invitedRoomId]);
 
   const handleJoin = async (e) => {
     e.preventDefault();
