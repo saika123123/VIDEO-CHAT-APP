@@ -10,6 +10,27 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const invitedRoomId = searchParams.get('room');
 
+
+
+  // QRコード経由の場合、自動的にユーザー名を生成
+  useEffect(() => {
+    const generateRandomName = () => {
+      const guestNames = [
+        'ゲスト', 'お客様', '参加者', '友人',
+        '太郎', '花子', '次郎', '佳子',
+        '幸子', '一郎', '美子', '健太'
+      ];
+
+      return `${guestNames[Math.floor(Math.random() * guestNames.length)]}_${Math.floor(1000 + Math.random() * 9000)}`;
+    };
+
+    if (invitedRoomId) {
+      // QRコード経由の場合、ランダムにユーザー名を生成
+      setName(generateRandomName());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invitedRoomId]);
+
   const handleJoin = async (e) => {
     e.preventDefault();
 

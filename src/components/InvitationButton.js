@@ -11,8 +11,11 @@ export default function InvitationButton({ roomId, userName }) {
             sessionStorage.setItem('userName', userName);
         }
 
-        // QRコードページへ移動
-        router.push(`/yoriai/qr/${roomId}`);
+        // QRコードページへ移動（絶対パスで指定する）
+        if (typeof window !== 'undefined') {
+            const baseUrl = window.location.origin;
+            window.location.href = `${baseUrl}/yoriai/qr/${roomId}`;
+        }
     };
 
     return (

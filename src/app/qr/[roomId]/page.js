@@ -19,8 +19,9 @@ export default function QRCodePage() {
 
     useEffect(() => {
         if (roomId && typeof window !== 'undefined') {
+            // 正しい招待URLを生成（クエリパラメータとして'room'を付与）
             const baseUrl = window.location.origin;
-            setInviteUrl(`${baseUrl}/yoriai/?room=${roomId}`);
+            setInviteUrl(`${baseUrl}/yoriai?room=${roomId}`);
         }
     }, [roomId]);
 
@@ -32,7 +33,8 @@ export default function QRCodePage() {
     };
 
     const goBack = () => {
-        router.push(`/yoriai/${roomId}?user=${sessionStorage.getItem('userName') || ''}`);
+        const userName = sessionStorage.getItem('userName') || '';
+        router.push(`/yoriai/${roomId}?user=${userName}`);
     };
 
     if (isLoading) {

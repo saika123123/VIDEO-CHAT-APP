@@ -14,6 +14,10 @@ export function middleware(request) {
     // ルームIDが存在する場合のみユーザーIDをチェック
     if (request.nextUrl.pathname.length > 1) {
         const userId = request.nextUrl.searchParams.get('user');
+        // QRコードページへのアクセスは許可する
+        if (request.nextUrl.pathname.includes('/qr/')) {
+            return NextResponse.next();
+        }
         // パスが/backgrounds/で始まらない場合のみリダイレクトを行う
         if (!userId && !request.nextUrl.pathname.startsWith('/backgrounds/')) {
             const roomId = request.nextUrl.pathname.replace(/^\/yoriai\//, '');
