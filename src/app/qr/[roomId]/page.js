@@ -11,6 +11,7 @@ export default function QRCodePage() {
     const [copied, setCopied] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [meetingName, setMeetingName] = useState('');
+    const [meetingSchedule, setMeetingSchedule] = useState('');
     const printSectionRef = useRef(null);
 
     useEffect(() => {
@@ -22,6 +23,12 @@ export default function QRCodePage() {
             const savedName = localStorage.getItem(`meeting_name_${params.roomId}`);
             if (savedName) {
                 setMeetingName(savedName);
+            }
+            
+            // ローカルストレージから開催時刻を読み込む
+            const savedSchedule = localStorage.getItem(`meeting_schedule_${params.roomId}`);
+            if (savedSchedule) {
+                setMeetingSchedule(savedSchedule);
             }
         }
     }, [params]);
@@ -51,6 +58,13 @@ export default function QRCodePage() {
             localStorage.setItem(`meeting_name_${roomId}`, meetingName);
         }
     }, [roomId, meetingName]);
+    
+    // 開催時刻が変更されたときにローカルストレージに保存
+    useEffect(() => {
+        if (roomId && meetingSchedule) {
+            localStorage.setItem(`meeting_schedule_${roomId}`, meetingSchedule);
+        }
+    }, [roomId, meetingSchedule]);
 
     const copyToClipboard = () => {
         navigator.clipboard.writeText(inviteUrl).then(() => {
@@ -107,6 +121,21 @@ export default function QRCodePage() {
                                 value={meetingName}
                                 onChange={(e) => setMeetingName(e.target.value)}
                                 placeholder="例: 山田家の誕生日会"
+                                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        
+                        {/* 開催時刻入力欄 */}
+                        <div className="mb-4 print-hidden">
+                            <label htmlFor="meetingSchedule" className="block text-sm font-medium text-gray-700 mb-1">
+                                開催時刻（印刷時に表示されます）
+                            </label>
+                            <input
+                                type="text"
+                                id="meetingSchedule"
+                                value={meetingSchedule}
+                                onChange={(e) => setMeetingSchedule(e.target.value)}
+                                placeholder="例: 毎週土曜12時から"
                                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                             />
                         </div>
@@ -190,6 +219,12 @@ export default function QRCodePage() {
                     <h1 className="text-3xl font-bold text-center mb-6">
                         {meetingName || '寄合 (ビデオ通話)'}
                     </h1>
+                    
+                    {meetingSchedule && (
+                        <h2 className="text-2xl text-center mb-6 text-gray-700">
+                            {meetingSchedule}
+                        </h2>
+                    )}
                     
                     <div className="flex flex-col items-center mb-6">
                         <div className="border-4 border-gray-300 p-4 bg-white">
