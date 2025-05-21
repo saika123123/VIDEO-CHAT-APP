@@ -253,9 +253,9 @@ export default function QRCodePage() {
                         <p className="text-sm break-all border p-2 bg-gray-50">
                             {inviteUrl}
                         </p>
-                        <p className="text-base mt-8">
+                        {/* <p className="text-base mt-8">
                             ルームID: {roomId}
-                        </p>
+                        </p> */}
                     </div>
                 </div>
             </div>
