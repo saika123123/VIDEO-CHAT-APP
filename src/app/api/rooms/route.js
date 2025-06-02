@@ -1,4 +1,5 @@
 import prisma from '@/lib/db';
+import { nanoid } from 'nanoid';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
@@ -28,15 +29,28 @@ export async function POST(req) {
                     throw new Error('指定された部屋が見つかりません');
                 }
             } else {
-                // ルームID未指定の場合は簡単な番号を生成
-                let counter = 1;
+                // 新しい部屋を作成する場合 - セキュアなランダムIDを生成
+                let attempts = 0;
+                const maxAttempts = 10; // 無限ループを防ぐ
+                
                 do {
-                    roomId = `room${counter}`;
+                    // nanoidを使用してセキュアなランダムIDを生成
+                    // 長さ12文字のランダムID（URLセーフな文字を使用）
+                    roomId = nanoid(12);
+                    
+                    // 既存のIDとの衝突をチェック
                     room = await tx.room.findUnique({
                         where: { id: roomId }
                     });
-                    counter++;
+                    
+                    attempts++;
+                    
+                    if (attempts >= maxAttempts) {
+                        throw new Error('部屋IDの生成に失敗しました。しばらく後に再試行してください。');
+                    }
                 } while (room);
+
+                console.log(`Generated secure room ID: ${roomId}`);
 
                 // 新しい部屋を作成
                 room = await tx.room.create({
