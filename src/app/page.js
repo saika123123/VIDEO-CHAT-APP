@@ -99,7 +99,7 @@ function HomeContent() {
 
   // 掲示板ページへ移動
   const goToBoard = () => {
-    router.push('/yoriai/board');
+    window.location.href = '/yoriai/board';
   };
 
   useEffect(() => {
