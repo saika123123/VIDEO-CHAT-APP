@@ -1,3 +1,4 @@
+// src/middleware.js - 掲示板ページへのアクセスを許可
 import { NextResponse } from 'next/server';
 
 export function middleware(request) {
@@ -6,7 +7,8 @@ export function middleware(request) {
         request.nextUrl.pathname.startsWith('/api/') ||
         request.nextUrl.pathname.startsWith('/_next/') ||
         request.nextUrl.pathname.startsWith('/backgrounds/') ||  // 背景画像へのアクセスを許可
-        request.nextUrl.pathname === '/'
+        request.nextUrl.pathname === '/' ||
+        request.nextUrl.pathname === '/yoriai/board'  // 掲示板ページへのアクセスを許可
     ) {
         return NextResponse.next();
     }
