@@ -1,6 +1,6 @@
 'use client';
 import { DIFFICULTY_LEVELS, QUIZ_CATEGORIES, QUIZ_ROOM_STATUS } from '@/lib/quizData';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
 export default function MultiplayerQuiz({ roomId, userId, userName }) {
