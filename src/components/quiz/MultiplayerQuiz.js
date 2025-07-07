@@ -30,6 +30,20 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     const timerRef = useRef();
     const mountedRef = useRef(true);
 
+    // 問題開始関数（useCallbackで依存関係を明確化）
+    const startQuestionCallback = useCallback((question, timeLimit, index) => {
+        setCurrentQuestion(question);
+        setCurrentQuestionIndex(index);
+        setSelectedAnswer(null);
+        setShowExplanation(false);
+        setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
+        
+        // 参加者の回答状況をリセット
+        setParticipants(prev => prev.map(p => ({ ...p, hasAnswered: false, answerTime: null })));
+        
+        startTimer(timeLimit);
+    }, []);
+
     // Socket.IO接続の初期化
     useEffect(() => {
         mountedRef.current = true;
@@ -97,7 +111,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 console.log('New question received:', question);
                 if (!mountedRef.current) return;
                 
-                startQuestion(question, timeLimit, index);
+                startQuestionCallback(question, timeLimit, index);
             });
 
             socketRef.current.on('quiz-answer-submitted', ({ userId: answerUserId, userName: answerUserName, answer, timestamp }) => {
@@ -153,7 +167,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             }
             stopTimer();
         };
-    }, [roomId, userId, userName]);
+    }, [roomId, userId, userName, startQuestionCallback]); // 依存関係を追加
 
     // タイマー管理
     const startTimer = (duration) => {
@@ -182,18 +196,9 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         }
     };
 
-    // 問題開始
+    // 問題開始（元の関数名を維持、内部でcallbackを使用）
     const startQuestion = (question, timeLimit, index) => {
-        setCurrentQuestion(question);
-        setCurrentQuestionIndex(index);
-        setSelectedAnswer(null);
-        setShowExplanation(false);
-        setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
-        
-        // 参加者の回答状況をリセット
-        setParticipants(prev => prev.map(p => ({ ...p, hasAnswered: false, answerTime: null })));
-        
-        startTimer(timeLimit);
+        startQuestionCallback(question, timeLimit, index);
     };
 
     // 回答送信

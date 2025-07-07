@@ -1331,9 +1331,7 @@ export default function VideoRoom({ roomId, userId }) {
                         <span className="mt-1 text-xs md:text-sm font-bold text-red-600">退出</span>
                     </div>
 
-                    // VideoRoom.js のコントロールパネル部分にクイズボタンを追加
-
-                    // コントロールパネル内の既存のボタンの後に追加
+            
                     {/* クイズボタン - 新規追加 */}
                     <div className="flex flex-col items-center">
                         <button
