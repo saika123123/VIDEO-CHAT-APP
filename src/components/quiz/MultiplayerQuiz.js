@@ -178,6 +178,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [soundVolume, setSoundVolume] = useState(0.7);
     const [showResultSymbol, setShowResultSymbol] = useState(null); // 'correct', 'incorrect', null
+    const [nextQuestionIndex, setNextQuestionIndex] = useState(0); // カウントダウン用の次の問題番号
 
     // Refs
     const socketRef = useRef();
@@ -209,7 +210,10 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // 問題開始のカウントダウン
     const startQuestionCountdown = useCallback((question, timeLimit, index) => {
-        console.log('Starting countdown for question index:', index);
+        console.log('🎯 Starting countdown for question index:', index, 'Question:', question.question);
+        
+        // 次の問題番号を設定（カウントダウン表示用）
+        setNextQuestionIndex(index);
         setQuestionTransitionState('countdown');
         setCountdownValue(3);
         setShowResultSymbol(null); // 結果シンボルをリセット
@@ -226,11 +230,11 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 
                 // 問題表示開始
                 setTimeout(() => {
-                    console.log('Setting question index to:', index);
+                    console.log('🎯 Setting current question index to:', index, 'Resetting selectedAnswer to null');
                     setQuestionTransitionState('showing');
                     setCurrentQuestion(question);
-                    setCurrentQuestionIndex(index); // ここで正しいインデックスを設定
-                    setSelectedAnswer(null);
+                    setCurrentQuestionIndex(index);
+                    setSelectedAnswer(null); // 重要：ここで確実にnullにリセット
                     setShowExplanation(false);
                     setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
                     warningPlayedRef.current = false;
@@ -305,13 +309,13 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
 
             socketRef.current.on('quiz-started', ({ questions: quizQuestions, settings }) => {
-                console.log('Quiz started with questions:', quizQuestions);
+                console.log('🎯 Quiz started with questions:', quizQuestions);
                 if (!mountedRef.current) return;
                 
                 setQuestions(quizQuestions);
                 setQuizSettings(settings);
                 setRoomStatus(QUIZ_ROOM_STATUS.IN_PROGRESS);
-                setCurrentQuestionIndex(0);
+                setCurrentQuestionIndex(-1); // 最初は-1に設定（まだ問題が開始されていない）
                 setAnswers([]);
                 setSelectedAnswer(null);
                 setShowExplanation(false);
@@ -319,7 +323,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
 
             socketRef.current.on('quiz-question', ({ question, index, timeLimit }) => {
-                console.log('New question received:', question, 'Index:', index);
+                console.log('🎯 New question received - Index:', index, 'Question:', question.question);
                 if (!mountedRef.current) return;
                 
                 // インデックスを直接渡す（サーバーから送られてくるインデックスをそのまま使用）
@@ -427,8 +431,14 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // 回答送信
     const submitAnswer = (answerIndex) => {
-        if (selectedAnswer !== null || roomStatus !== QUIZ_ROOM_STATUS.QUESTION_TIME) return;
+        console.log('🎯 Submit answer called - Current selectedAnswer:', selectedAnswer, 'New answer:', answerIndex);
+        
+        if (selectedAnswer !== null || roomStatus !== QUIZ_ROOM_STATUS.QUESTION_TIME) {
+            console.log('🎯 Submit answer blocked - already answered or wrong status');
+            return;
+        }
 
+        console.log('🎯 Setting selectedAnswer to:', answerIndex);
         setSelectedAnswer(answerIndex);
         setRoomStatus(QUIZ_ROOM_STATUS.ANSWER_TIME);
         setQuestionTransitionState('waiting');
@@ -450,28 +460,40 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // 問題結果表示
     const showQuestionResults = (correctAnswer, explanation, participantAnswers) => {
-        setRoomStatus(QUIZ_ROOM_STATUS.RESULT_TIME);
-        setQuestionTransitionState('results');
-        setShowExplanation(true);
+        console.log('🎯 Showing results - selectedAnswer at time of result:', selectedAnswer, 'correctAnswer:', correctAnswer);
         
-        // 正解/不正解の大きなシンボルを表示
-        if (selectedAnswer !== null && selectedAnswer === correctAnswer) {
-            // 正解の場合
-            setShowResultSymbol('correct');
-            soundManagerRef.current?.playCorrectSound();
-        } else if (selectedAnswer !== null && selectedAnswer !== correctAnswer) {
-            // 不正解の場合（回答はしたが間違い）
-            setShowResultSymbol('incorrect');
-            soundManagerRef.current?.playIncorrectSound();
-        } else {
-            // 未回答の場合（時間切れ）
-            setShowResultSymbol('timeout');
-        }
-        
-        // 3秒後にシンボルを消す
-        setTimeout(() => {
-            setShowResultSymbol(null);
-        }, 3000);
+        // 結果判定のためにcurrentSelectedAnswerを取得（最新の状態を確実に取得）
+        setSelectedAnswer(currentSelectedAnswer => {
+            console.log('🎯 Current selectedAnswer in setState:', currentSelectedAnswer);
+            
+            setRoomStatus(QUIZ_ROOM_STATUS.RESULT_TIME);
+            setQuestionTransitionState('results');
+            setShowExplanation(true);
+            
+            // 正解/不正解の大きなシンボルを表示（より明確な条件分岐）
+            if (currentSelectedAnswer === null) {
+                // 未回答の場合（時間切れ）
+                console.log('🎯 Result: TIMEOUT (no answer selected)');
+                setShowResultSymbol('timeout');
+            } else if (currentSelectedAnswer === correctAnswer) {
+                // 正解の場合
+                console.log('🎯 Result: CORRECT');
+                setShowResultSymbol('correct');
+                soundManagerRef.current?.playCorrectSound();
+            } else {
+                // 不正解の場合（回答はしたが間違い）
+                console.log('🎯 Result: INCORRECT');
+                setShowResultSymbol('incorrect');
+                soundManagerRef.current?.playIncorrectSound();
+            }
+            
+            // 3秒後にシンボルを消す
+            setTimeout(() => {
+                setShowResultSymbol(null);
+            }, 3000);
+            
+            return currentSelectedAnswer; // 状態は変更しない
+        });
         
         // 正解/不正解の表示用に正解情報を保存
         setCurrentQuestion(prev => {
@@ -792,9 +814,6 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // カウントダウン画面
     if (questionTransitionState === 'countdown') {
-        // カウントダウン中は次に表示する問題番号を使用
-        const nextQuestionNumber = currentQuestionIndex + 1;
-        
         return (
             <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
                 <div className="text-center">
@@ -802,7 +821,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                         {countdownValue}
                     </div>
                     <div className="text-3xl font-bold text-gray-700 mb-4">
-                        問題 {nextQuestionNumber} を準備中...
+                        問題 {nextQuestionIndex + 1} を準備中...
                     </div>
                     <div className="text-xl text-gray-600">
                         まもなく問題が表示されます
@@ -993,6 +1012,9 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     あなたの回答: <strong className="bg-yellow-200 px-2 py-1 rounded">
                                         {selectedAnswer !== null ? String.fromCharCode(65 + selectedAnswer) : '未回答'}
                                     </strong>
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">
+                                    デバッグ: selectedAnswer = {selectedAnswer?.toString() || 'null'}
                                 </div>
                             </div>
                         )}
