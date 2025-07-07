@@ -1303,7 +1303,7 @@ export default function VideoRoom({ roomId, userId }) {
 
                     {/* 招待ボタンを追加
                     <InvitationButton roomId={roomId} userName={userName} /> */}
-                    
+
                     {/* 区切り線 */}
                     <div className="hidden md:block h-10 md:h-16 w-px bg-gray-300 mx-1 md:mx-2" />
 
@@ -1329,6 +1329,32 @@ export default function VideoRoom({ roomId, userId }) {
                             </svg>
                         </button>
                         <span className="mt-1 text-xs md:text-sm font-bold text-red-600">退出</span>
+                    </div>
+
+                    // VideoRoom.js のコントロールパネル部分にクイズボタンを追加
+
+                    // コントロールパネル内の既存のボタンの後に追加
+                    {/* クイズボタン - 新規追加 */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={() => {
+                                // クイズページに移動
+                                window.open(`/yoriai/quiz/${roomId}?user=${userId}`, '_blank');
+                            }}
+                            className="
+            p-2 md:p-4 rounded-full bg-purple-600 text-white 
+            hover:bg-purple-700 transition-colors shadow-lg
+            flex flex-col items-center gap-1
+        "
+                            aria-label="みんなでクイズ"
+                        >
+                            <svg className="w-5 h-5 md:w-8 md:h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014.846 21H9.154a3.374 3.374 0 00-2.669-1.153l-.548-.547z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="mt-1 text-xs md:text-sm font-bold">クイズ</span>
                     </div>
                 </div>
             </div>
