@@ -343,8 +343,14 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
 
             socketRef.current.on('quiz-question-results', ({ correctAnswer, explanation, participantAnswers }) => {
-                console.log('Question results received:', { correctAnswer, explanation });
+                console.log('🎯 Question results received:', { correctAnswer, explanation });
                 if (!mountedRef.current) return;
+                
+                // クイズが終了していないかチェック
+                if (roomStatus === QUIZ_ROOM_STATUS.FINISHED) {
+                    console.log('🎯 Quiz is finished, ignoring question results');
+                    return;
+                }
                 
                 showQuestionResults(correctAnswer, explanation, participantAnswers);
             });
@@ -353,9 +359,13 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 console.log('🎯 Quiz finished with results:', results);
                 if (!mountedRef.current) return;
                 
+                // 確実にクイズを終了状態にする
                 setFinalResults(results);
                 setRoomStatus(QUIZ_ROOM_STATUS.FINISHED);
                 setQuestionTransitionState('finished'); // 明確に終了状態を設定
+                setCurrentQuestion(null); // 現在の問題をクリア
+                setSelectedAnswer(null); // 選択された回答をクリア
+                setShowExplanation(false); // 解説表示をクリア
                 stopTimer();
                 
                 // 終了音を再生
@@ -461,6 +471,12 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     // 問題結果表示
     const showQuestionResults = (correctAnswer, explanation, participantAnswers) => {
         console.log('🎯 Showing results - selectedAnswer at time of result:', selectedAnswer, 'correctAnswer:', correctAnswer);
+        
+        // クイズが終了している場合は結果表示をスキップ
+        if (roomStatus === QUIZ_ROOM_STATUS.FINISHED || questionTransitionState === 'finished') {
+            console.log('🎯 Quiz already finished, skipping question results');
+            return;
+        }
         
         // 結果判定のためにcurrentSelectedAnswerを取得（最新の状態を確実に取得）
         setSelectedAnswer(currentSelectedAnswer => {
@@ -848,10 +864,21 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     }
 
     // クイズ進行中画面
-    if ((roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME || 
+    if (roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME || 
         roomStatus === QUIZ_ROOM_STATUS.ANSWER_TIME || 
-        roomStatus === QUIZ_ROOM_STATUS.RESULT_TIME) &&
-        questionTransitionState !== 'finished') { // 終了状態でない場合のみ表示
+        roomStatus === QUIZ_ROOM_STATUS.RESULT_TIME) {
+        
+        // 終了状態の場合は問題画面を表示しない
+        if (questionTransitionState === 'finished' || roomStatus === QUIZ_ROOM_STATUS.FINISHED) {
+            console.log('🎯 Blocking question screen - quiz is finished');
+            return null; // 何も表示しない
+        }
+        
+        // 現在の問題がない場合も表示しない
+        if (!currentQuestion) {
+            console.log('🎯 No current question available');
+            return null;
+        }
         
         return (
             <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -1079,8 +1106,10 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         );
     }
 
-    // 最終結果画面
-    if (roomStatus === QUIZ_ROOM_STATUS.FINISHED && finalResults && questionTransitionState === 'finished') {
+    // 最終結果画面 - 条件を緩和してより確実に表示
+    if (roomStatus === QUIZ_ROOM_STATUS.FINISHED && finalResults) {
+        console.log('🎯 Displaying final results screen');
+        
         const myResult = finalResults.find(r => r.userId === userId);
         const sortedResults = [...finalResults].sort((a, b) => b.score.totalScore - a.score.totalScore);
         
