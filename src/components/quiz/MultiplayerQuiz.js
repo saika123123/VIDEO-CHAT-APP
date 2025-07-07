@@ -3,6 +3,153 @@ import { DIFFICULTY_LEVELS, QUIZ_CATEGORIES, QUIZ_ROOM_STATUS } from '@/lib/quiz
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
+// 効果音の管理クラス
+class SoundManager {
+    constructor() {
+        this.audioContext = null;
+        this.sounds = {};
+        this.enabled = true;
+        this.volume = 0.7;
+        this.initAudioContext();
+    }
+
+    async initAudioContext() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // ユーザーの最初のクリックで AudioContext を有効化
+            document.addEventListener('click', this.enableAudio.bind(this), { once: true });
+            document.addEventListener('keydown', this.enableAudio.bind(this), { once: true });
+        } catch (error) {
+            console.warn('音声コンテキストの初期化に失敗しました:', error);
+        }
+    }
+
+    async enableAudio() {
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+            console.log('音声コンテキストが有効になりました');
+        }
+    }
+
+    // ビープ音を生成
+    createBeep(frequency, duration, type = 'sine') {
+        if (!this.audioContext || !this.enabled) return null;
+
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.frequency.value = frequency;
+        oscillator.type = type;
+        
+        gainNode.gain.setValueAtTime(this.volume, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+        
+        return { oscillator, gainNode };
+    }
+
+    // 正解音（上昇音階）
+    playCorrectSound() {
+        if (!this.enabled) return;
+        
+        const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+        notes.forEach((freq, index) => {
+            setTimeout(() => {
+                const sound = this.createBeep(freq, 0.2);
+                if (sound) {
+                    sound.oscillator.start();
+                    sound.oscillator.stop(this.audioContext.currentTime + 0.2);
+                }
+            }, index * 100);
+        });
+    }
+
+    // 不正解音（下降音）
+    playIncorrectSound() {
+        if (!this.enabled) return;
+        
+        const notes = [523.25, 466.16, 415.30]; // C5, A#4, G#4
+        notes.forEach((freq, index) => {
+            setTimeout(() => {
+                const sound = this.createBeep(freq, 0.3, 'sawtooth');
+                if (sound) {
+                    sound.oscillator.start();
+                    sound.oscillator.stop(this.audioContext.currentTime + 0.3);
+                }
+            }, index * 150);
+        });
+    }
+
+    // 時間警告音（短いビープ）
+    playWarningSound() {
+        if (!this.enabled) return;
+        
+        const sound = this.createBeep(800, 0.1);
+        if (sound) {
+            sound.oscillator.start();
+            sound.oscillator.stop(this.audioContext.currentTime + 0.1);
+        }
+    }
+
+    // 問題開始音（チャイム風）
+    playQuestionStartSound() {
+        if (!this.enabled) return;
+        
+        const notes = [523.25, 659.25]; // C5, E5
+        notes.forEach((freq, index) => {
+            setTimeout(() => {
+                const sound = this.createBeep(freq, 0.4);
+                if (sound) {
+                    sound.oscillator.start();
+                    sound.oscillator.stop(this.audioContext.currentTime + 0.4);
+                }
+            }, index * 200);
+        });
+    }
+
+    // クイズ終了音（ファンファーレ風）
+    playFinishSound() {
+        if (!this.enabled) return;
+        
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, index) => {
+            setTimeout(() => {
+                const sound = this.createBeep(freq, 0.5);
+                if (sound) {
+                    sound.oscillator.start();
+                    sound.oscillator.stop(this.audioContext.currentTime + 0.5);
+                }
+            }, index * 200);
+        });
+    }
+
+    // カウントダウン音
+    playCountdownSound(count) {
+        if (!this.enabled) return;
+        
+        // 3,2,1でピッチを上げる
+        const frequency = count === 3 ? 400 : count === 2 ? 600 : 800;
+        const sound = this.createBeep(frequency, 0.2);
+        if (sound) {
+            sound.oscillator.start();
+            sound.oscillator.stop(this.audioContext.currentTime + 0.2);
+        }
+    }
+
+    // 音量設定
+    setVolume(volume) {
+        this.volume = Math.max(0, Math.min(1, volume));
+    }
+
+    // 音声のオン/オフ
+    setEnabled(enabled) {
+        this.enabled = enabled;
+    }
+}
+
 export default function MultiplayerQuiz({ roomId, userId, userName }) {
     // 状態管理
     const [roomStatus, setRoomStatus] = useState(QUIZ_ROOM_STATUS.WAITING);
@@ -24,27 +171,84 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     const [connectionStatus, setConnectionStatus] = useState('connecting');
     const [error, setError] = useState(null);
     const [showExplanation, setShowExplanation] = useState(false);
+    
+    // 新しい状態：進行表示用
+    const [questionTransitionState, setQuestionTransitionState] = useState('idle'); // 'idle', 'countdown', 'showing', 'results'
+    const [countdownValue, setCountdownValue] = useState(0);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [soundVolume, setSoundVolume] = useState(0.7);
 
     // Refs
     const socketRef = useRef();
     const timerRef = useRef();
     const mountedRef = useRef(true);
+    const soundManagerRef = useRef(null);
+    const warningPlayedRef = useRef(false);
+
+    // 効果音マネージャーの初期化
+    useEffect(() => {
+        soundManagerRef.current = new SoundManager();
+        soundManagerRef.current.setVolume(soundVolume);
+        soundManagerRef.current.setEnabled(soundEnabled);
+
+        return () => {
+            if (soundManagerRef.current?.audioContext) {
+                soundManagerRef.current.audioContext.close();
+            }
+        };
+    }, []);
+
+    // 音声設定の更新
+    useEffect(() => {
+        if (soundManagerRef.current) {
+            soundManagerRef.current.setEnabled(soundEnabled);
+            soundManagerRef.current.setVolume(soundVolume);
+        }
+    }, [soundEnabled, soundVolume]);
+
+    // 問題開始のカウントダウン
+    const startQuestionCountdown = useCallback((question, timeLimit, index) => {
+        setQuestionTransitionState('countdown');
+        setCountdownValue(3);
+        
+        // カウントダウン実行
+        let count = 3;
+        const countdownInterval = setInterval(() => {
+            if (count > 0) {
+                soundManagerRef.current?.playCountdownSound(count);
+                setCountdownValue(count);
+                count--;
+            } else {
+                clearInterval(countdownInterval);
+                
+                // 問題表示開始
+                setTimeout(() => {
+                    setQuestionTransitionState('showing');
+                    setCurrentQuestion(question);
+                    setCurrentQuestionIndex(index);
+                    setSelectedAnswer(null);
+                    setShowExplanation(false);
+                    setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
+                    warningPlayedRef.current = false;
+                    
+                    // 参加者の回答状況をリセット
+                    setParticipants(prev => prev.map(p => ({ ...p, hasAnswered: false, answerTime: null })));
+                    
+                    // 問題開始音を再生
+                    soundManagerRef.current?.playQuestionStartSound();
+                    
+                    // タイマー開始
+                    startTimer(timeLimit);
+                }, 500);
+            }
+        }, 1000);
+    }, []);
 
     // 問題開始関数（useCallbackで依存関係を明確化）
     const startQuestionCallback = useCallback((question, timeLimit, index) => {
         console.log('Starting question:', question.question, 'Index:', index);
-        
-        setCurrentQuestion(question);
-        setCurrentQuestionIndex(index);
-        setSelectedAnswer(null);
-        setShowExplanation(false);
-        setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
-        
-        // 参加者の回答状況をリセット
-        setParticipants(prev => prev.map(p => ({ ...p, hasAnswered: false, answerTime: null })));
-        
-        startTimer(timeLimit);
-    }, []);
+        startQuestionCountdown(question, timeLimit, index);
+    }, [startQuestionCountdown]);
 
     // Socket.IO接続の初期化
     useEffect(() => {
@@ -107,6 +311,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 setAnswers([]);
                 setSelectedAnswer(null);
                 setShowExplanation(false);
+                setQuestionTransitionState('idle');
             });
 
             socketRef.current.on('quiz-question', ({ question, index, timeLimit }) => {
@@ -141,7 +346,13 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 
                 setFinalResults(results);
                 setRoomStatus(QUIZ_ROOM_STATUS.FINISHED);
+                setQuestionTransitionState('idle');
                 stopTimer();
+                
+                // 終了音を再生
+                setTimeout(() => {
+                    soundManagerRef.current?.playFinishSound();
+                }, 500);
             });
 
             socketRef.current.on('participant-left', ({ userId: leftUserId, userName: leftUserName }) => {
@@ -169,7 +380,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             }
             stopTimer();
         };
-    }, [roomId, userId, userName, startQuestionCallback]); // 依存関係を追加
+    }, [roomId, userId, userName, startQuestionCallback]);
 
     // タイマー管理
     const startTimer = (duration) => {
@@ -178,6 +389,17 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
         timerRef.current = setInterval(() => {
             setTimeLeft(prev => {
+                // 残り10秒で警告音を一度だけ再生
+                if (prev === 11 && !warningPlayedRef.current) {
+                    soundManagerRef.current?.playWarningSound();
+                    warningPlayedRef.current = true;
+                }
+                
+                // 残り5秒以下でカウントダウン音
+                if (prev <= 5 && prev > 1) {
+                    soundManagerRef.current?.playCountdownSound(prev - 1);
+                }
+                
                 if (prev <= 1) {
                     // 時間切れ
                     if (roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME && selectedAnswer === null) {
@@ -198,17 +420,13 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         }
     };
 
-    // 問題開始（元の関数名を維持、内部でcallbackを使用）
-    const startQuestion = (question, timeLimit, index) => {
-        startQuestionCallback(question, timeLimit, index);
-    };
-
     // 回答送信
     const submitAnswer = (answerIndex) => {
         if (selectedAnswer !== null || roomStatus !== QUIZ_ROOM_STATUS.QUESTION_TIME) return;
 
         setSelectedAnswer(answerIndex);
         setRoomStatus(QUIZ_ROOM_STATUS.ANSWER_TIME);
+        setQuestionTransitionState('waiting');
         stopTimer();
 
         // 回答を保存
@@ -228,9 +446,17 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     // 問題結果表示
     const showQuestionResults = (correctAnswer, explanation, participantAnswers) => {
         setRoomStatus(QUIZ_ROOM_STATUS.RESULT_TIME);
+        setQuestionTransitionState('results');
         setShowExplanation(true);
         
-        // 正解/不正解の表示用に正解情報を保存（既存の問題データに追加）
+        // 正解/不正解音を再生
+        if (selectedAnswer === correctAnswer) {
+            soundManagerRef.current?.playCorrectSound();
+        } else if (selectedAnswer !== null) {
+            soundManagerRef.current?.playIncorrectSound();
+        }
+        
+        // 正解/不正解の表示用に正解情報を保存
         setCurrentQuestion(prev => {
             if (!prev) return prev;
             return {
@@ -273,8 +499,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
             socketRef.current.disconnect();
         }
-        // 元のビデオ通話に戻る
-        window.close(); // 新しいタブで開いている場合は閉じる
+        window.close();
     };
 
     // 接続エラー時の表示
@@ -328,12 +553,37 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                             <h1 className="text-3xl font-bold text-gray-800">
                                 🧠 みんなでクイズ
                             </h1>
-                            <button
-                                onClick={leaveQuiz}
-                                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-lg"
-                            >
-                                退出
-                            </button>
+                            <div className="flex items-center gap-4">
+                                {/* 音声設定 */}
+                                <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg">
+                                    <span className="text-sm font-bold">🔊</span>
+                                    <button
+                                        onClick={() => setSoundEnabled(!soundEnabled)}
+                                        className={`px-3 py-1 rounded text-sm font-bold ${
+                                            soundEnabled ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-600'
+                                        }`}
+                                    >
+                                        {soundEnabled ? 'ON' : 'OFF'}
+                                    </button>
+                                    {soundEnabled && (
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.1"
+                                            value={soundVolume}
+                                            onChange={(e) => setSoundVolume(parseFloat(e.target.value))}
+                                            className="w-16"
+                                        />
+                                    )}
+                                </div>
+                                <button
+                                    onClick={leaveQuiz}
+                                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-lg"
+                                >
+                                    退出
+                                </button>
+                            </div>
                         </div>
                         <p className="text-lg text-gray-600 mt-2">
                             ルーム: {roomId} | あなた: {userName}
@@ -392,6 +642,17 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
                             {isHost ? (
                                 <div className="space-y-6">
+                                    {/* 音声説明 */}
+                                    <div className="bg-green-50 p-4 rounded-xl">
+                                        <div className="text-lg font-bold text-green-800 mb-2">🎵 効果音について</div>
+                                        <div className="text-sm text-green-700 space-y-1">
+                                            <div>• 問題開始時にチャイム音が鳴ります</div>
+                                            <div>• 残り10秒で警告音がします</div>
+                                            <div>• 正解時は上昇音、不正解時は下降音</div>
+                                            <div>• 画面上部で音量調整できます</div>
+                                        </div>
+                                    </div>
+
                                     {/* カテゴリ選択 */}
                                     <div>
                                         <label className="block text-lg font-bold mb-3">📚 カテゴリ</label>
@@ -512,6 +773,25 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         );
     }
 
+    // カウントダウン画面
+    if (questionTransitionState === 'countdown') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="text-8xl font-bold text-orange-600 mb-8 animate-pulse">
+                        {countdownValue}
+                    </div>
+                    <div className="text-3xl font-bold text-gray-700 mb-4">
+                        問題 {currentQuestionIndex + 1} を準備中...
+                    </div>
+                    <div className="text-xl text-gray-600">
+                        まもなく問題が表示されます
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     // クイズ進行中画面
     if (roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME || 
         roomStatus === QUIZ_ROOM_STATUS.ANSWER_TIME || 
@@ -531,16 +811,45 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     {currentQuestion?.category ? QUIZ_CATEGORIES[currentQuestion.category]?.name || '混合' : '混合'}
                                 </span>
                             </div>
-                            <div className={`text-3xl font-bold px-6 py-3 rounded-2xl ${
-                                timeLeft <= 10 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-yellow-100 text-yellow-800'
+                            <div className={`text-3xl font-bold px-6 py-3 rounded-2xl transition-all duration-300 ${
+                                timeLeft <= 10 ? 'bg-red-100 text-red-600 animate-pulse scale-110' : 
+                                timeLeft <= 20 ? 'bg-yellow-100 text-yellow-800' : 
+                                'bg-green-100 text-green-800'
                             }`}>
                                 ⏰ {timeLeft}秒
+                            </div>
+                            {/* 音声コントロール */}
+                            <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg">
+                                <span className="text-sm">🔊</span>
+                                <button
+                                    onClick={() => setSoundEnabled(!soundEnabled)}
+                                    className={`px-2 py-1 rounded text-xs font-bold ${
+                                        soundEnabled ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-600'
+                                    }`}
+                                >
+                                    {soundEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {/* 進行状況バー */}
+                        <div className="mt-4">
+                            <div className="bg-gray-200 rounded-full h-2">
+                                <div
+                                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+                                ></div>
+                            </div>
+                            <div className="text-center text-sm text-gray-600 mt-1">
+                                進行状況: {currentQuestionIndex + 1}/{questions.length}
                             </div>
                         </div>
                     </div>
 
                     {/* 問題文 */}
-                    <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+                    <div className={`bg-white rounded-2xl shadow-xl p-8 mb-6 transition-all duration-500 ${
+                        questionTransitionState === 'showing' ? 'animate-fadeIn' : ''
+                    }`}>
                         <h2 className="text-3xl font-bold text-gray-800 leading-relaxed text-center">
                             {currentQuestion?.question}
                         </h2>
@@ -555,10 +864,12 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                         key={index}
                                         onClick={() => submitAnswer(index)}
                                         disabled={selectedAnswer !== null}
-                                        className="p-6 text-2xl font-bold border-3 border-gray-200 rounded-2xl
-                                                 hover:border-blue-500 hover:bg-blue-50 transition-all
-                                                 text-left shadow-sm hover:shadow-md disabled:opacity-50
-                                                 disabled:cursor-not-allowed"
+                                        className={`p-6 text-2xl font-bold border-3 rounded-2xl transition-all duration-300
+                                                 hover:border-blue-500 hover:bg-blue-50 hover:scale-105 hover:shadow-lg
+                                                 text-left shadow-sm disabled:opacity-50
+                                                 disabled:cursor-not-allowed transform active:scale-95 ${
+                                                     selectedAnswer === index ? 'bg-blue-100 border-blue-500' : 'border-gray-200'
+                                                 }`}
                                     >
                                         <span className="bg-blue-100 text-blue-800 px-4 py-2 rounded-full mr-4 text-xl">
                                             {String.fromCharCode(65 + index)}
@@ -575,23 +886,27 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     let textColor = 'text-gray-700';
                                     let icon = '';
                                     let borderColor = 'border-gray-300';
+                                    let animationClass = '';
 
                                     if (showExplanation && index === currentQuestion.correctAnswer) {
                                         bgColor = 'bg-green-100';
                                         textColor = 'text-green-800';
                                         borderColor = 'border-green-400';
                                         icon = '✅';
+                                        animationClass = 'animate-pulse';
                                     } else if (showExplanation && index === selectedAnswer && index !== currentQuestion.correctAnswer) {
                                         bgColor = 'bg-red-100';
                                         textColor = 'text-red-800';
                                         borderColor = 'border-red-400';
                                         icon = '❌';
+                                        animationClass = 'animate-bounce';
                                     }
 
                                     return (
                                         <div
                                             key={index}
-                                            className={`p-6 text-2xl font-bold border-3 rounded-2xl ${bgColor} ${textColor} ${borderColor}`}
+                                            className={`p-6 text-2xl font-bold border-3 rounded-2xl transition-all duration-500 ${
+                                                bgColor} ${textColor} ${borderColor} ${animationClass}`}
                                         >
                                             <span className="bg-blue-100 text-blue-800 px-4 py-2 rounded-full mr-4 text-xl">
                                                 {String.fromCharCode(65 + index)}
@@ -606,7 +921,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
                         {/* 解説表示 */}
                         {roomStatus === QUIZ_ROOM_STATUS.RESULT_TIME && currentQuestion?.explanation && showExplanation && (
-                            <div className="mt-6 bg-blue-50 rounded-2xl p-6">
+                            <div className="mt-6 bg-blue-50 rounded-2xl p-6 animate-fadeIn">
                                 <h3 className="text-2xl font-bold text-blue-800 mb-3">💡 解説</h3>
                                 <p className="text-xl text-blue-700 leading-relaxed">{currentQuestion.explanation}</p>
                             </div>
@@ -615,11 +930,14 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                         {/* 回答待ちメッセージ */}
                         {roomStatus === QUIZ_ROOM_STATUS.ANSWER_TIME && !showExplanation && (
                             <div className="mt-6 bg-yellow-50 rounded-2xl p-6 text-center">
-                                <div className="text-xl font-bold text-yellow-800">
-                                    ⏳ 他の参加者の回答を待っています...
+                                <div className="text-xl font-bold text-yellow-800 flex items-center justify-center gap-2">
+                                    <div className="w-6 h-6 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                                    他の参加者の回答を待っています...
                                 </div>
                                 <div className="text-lg text-yellow-700 mt-2">
-                                    あなたの回答: <strong>{selectedAnswer !== null ? String.fromCharCode(65 + selectedAnswer) : '未回答'}</strong>
+                                    あなたの回答: <strong className="bg-yellow-200 px-2 py-1 rounded">
+                                        {selectedAnswer !== null ? String.fromCharCode(65 + selectedAnswer) : '未回答'}
+                                    </strong>
                                 </div>
                             </div>
                         )}
@@ -632,9 +950,9 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                             {participants.map(participant => (
                                 <div
                                     key={participant.userId}
-                                    className={`p-3 rounded-xl text-center transition-colors ${
+                                    className={`p-3 rounded-xl text-center transition-all duration-500 transform ${
                                         participant.hasAnswered 
-                                            ? 'bg-green-100 text-green-800 border-2 border-green-300' 
+                                            ? 'bg-green-100 text-green-800 border-2 border-green-300 scale-105' 
                                             : 'bg-gray-100 text-gray-600 border-2 border-gray-300'
                                     }`}
                                 >
@@ -686,7 +1004,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 p-4">
                 <div className="max-w-6xl mx-auto">
                     {/* ヘッダー */}
-                    <div className="bg-white rounded-2xl shadow-xl p-8 text-center mb-6">
+                    <div className="bg-white rounded-2xl shadow-xl p-8 text-center mb-6 animate-fadeIn">
                         <h1 className="text-4xl font-bold mb-4 text-gray-800">
                             🎉 クイズ終了！お疲れさまでした！
                         </h1>
@@ -721,15 +1039,15 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     return (
                                         <div
                                             key={result.userId}
-                                            className={`p-4 rounded-xl flex items-center justify-between transition-all ${
+                                            className={`p-4 rounded-xl flex items-center justify-between transition-all duration-500 ${
                                                 isMyResult 
-                                                    ? 'bg-blue-50 border-2 border-blue-200 shadow-md' 
+                                                    ? 'bg-blue-50 border-2 border-blue-200 shadow-md scale-105' 
                                                     : 'bg-gray-50 border-2 border-gray-100'
                                             }`}
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold ${
-                                                    index === 0 ? 'bg-yellow-500 text-white' :
+                                                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold transition-all duration-300 ${
+                                                    index === 0 ? 'bg-yellow-500 text-white animate-pulse' :
                                                     index === 1 ? 'bg-gray-400 text-white' :
                                                     index === 2 ? 'bg-orange-600 text-white' :
                                                     'bg-blue-500 text-white'
@@ -743,7 +1061,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                                             {result.userName}
                                                         </span>
                                                         {isMyResult && (
-                                                            <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-sm font-bold">
+                                                            <span className="bg-blue-500 text-white px-2 py-1 rounded-full text-sm font-bold animate-bounce">
                                                                 あなた
                                                             </span>
                                                         )}
@@ -778,25 +1096,25 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     <div className="bg-blue-50 p-4 rounded-xl">
                                         <div className="text-xl font-bold mb-3 text-blue-800">🎯 あなたの詳細</div>
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div className="bg-white p-3 rounded-lg text-center">
+                                            <div className="bg-white p-3 rounded-lg text-center transform hover:scale-105 transition-transform">
                                                 <div className="text-3xl font-bold text-green-600">
                                                     {myResult.score.correctCount}
                                                 </div>
                                                 <div className="text-sm text-gray-600">正解数</div>
                                             </div>
-                                            <div className="bg-white p-3 rounded-lg text-center">
+                                            <div className="bg-white p-3 rounded-lg text-center transform hover:scale-105 transition-transform">
                                                 <div className="text-3xl font-bold text-red-600">
                                                     {myResult.score.totalQuestions - myResult.score.correctCount}
                                                 </div>
                                                 <div className="text-sm text-gray-600">不正解数</div>
                                             </div>
-                                            <div className="bg-white p-3 rounded-lg text-center">
+                                            <div className="bg-white p-3 rounded-lg text-center transform hover:scale-105 transition-transform">
                                                 <div className="text-3xl font-bold text-blue-600">
                                                     {myResult.score.totalScore}
                                                 </div>
                                                 <div className="text-sm text-gray-600">総得点</div>
                                             </div>
-                                            <div className="bg-white p-3 rounded-lg text-center">
+                                            <div className="bg-white p-3 rounded-lg text-center transform hover:scale-105 transition-transform">
                                                 <div className="text-3xl font-bold text-purple-600">
                                                     {sortedResults.findIndex(r => r.userId === userId) + 1}位
                                                 </div>
@@ -845,7 +1163,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                             <div className="space-y-2">
                                                 {sortedResults[0] && (
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-2xl">🥇</span>
+                                                        <span className="text-2xl animate-bounce">🥇</span>
                                                         <span className="font-bold">
                                                             チャンピオン: {sortedResults[0].userName} 
                                                             ({sortedResults[0].score.totalScore}点)
@@ -878,7 +1196,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                     <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
                         <h3 className="text-xl font-bold mb-4 text-gray-800">📋 今回のクイズ情報</h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                            <div className="bg-gray-50 p-3 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-xl transform hover:scale-105 transition-transform">
                                 <div className="text-lg font-bold text-gray-600">カテゴリ</div>
                                 <div className="text-xl">
                                     {quizSettings.category === 'mixed' 
@@ -887,17 +1205,17 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                     }
                                 </div>
                             </div>
-                            <div className="bg-gray-50 p-3 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-xl transform hover:scale-105 transition-transform">
                                 <div className="text-lg font-bold text-gray-600">難易度</div>
                                 <div className="text-xl">
                                     {DIFFICULTY_LEVELS[quizSettings.difficulty]?.icon} {DIFFICULTY_LEVELS[quizSettings.difficulty]?.name}
                                 </div>
                             </div>
-                            <div className="bg-gray-50 p-3 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-xl transform hover:scale-105 transition-transform">
                                 <div className="text-lg font-bold text-gray-600">問題数</div>
                                 <div className="text-xl font-bold">{quizSettings.questionCount}問</div>
                             </div>
-                            <div className="bg-gray-50 p-3 rounded-xl">
+                            <div className="bg-gray-50 p-3 rounded-xl transform hover:scale-105 transition-transform">
                                 <div className="text-lg font-bold text-gray-600">制限時間</div>
                                 <div className="text-xl font-bold">{quizSettings.timeLimit}秒</div>
                             </div>
@@ -909,7 +1227,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                         <button
                             onClick={() => window.location.reload()}
                             className="px-8 py-4 bg-blue-600 text-white rounded-xl text-xl font-bold 
-                                     hover:bg-blue-700 transition-colors shadow-lg
+                                     hover:bg-blue-700 transition-all duration-300 shadow-lg transform hover:scale-105
                                      flex items-center justify-center gap-3"
                         >
                             <span className="text-2xl">🔄</span>
@@ -935,7 +1253,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                 leaveQuiz();
                             }}
                             className="px-8 py-4 bg-green-600 text-white rounded-xl text-xl font-bold 
-                                     hover:bg-green-700 transition-colors shadow-lg
+                                     hover:bg-green-700 transition-all duration-300 shadow-lg transform hover:scale-105
                                      flex items-center justify-center gap-3"
                         >
                             <span className="text-2xl">🏠</span>
@@ -962,7 +1280,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                                 }
                             }}
                             className="px-8 py-4 bg-purple-600 text-white rounded-xl text-xl font-bold 
-                                     hover:bg-purple-700 transition-colors shadow-lg
+                                     hover:bg-purple-700 transition-all duration-300 shadow-lg transform hover:scale-105
                                      flex items-center justify-center gap-3"
                         >
                             <span className="text-2xl">📤</span>
@@ -971,7 +1289,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                     </div>
 
                     {/* お疲れさまメッセージ */}
-                    <div className="mt-6 bg-gradient-to-r from-pink-100 to-purple-100 rounded-2xl p-6 text-center">
+                    <div className="mt-6 bg-gradient-to-r from-pink-100 to-purple-100 rounded-2xl p-6 text-center animate-fadeIn">
                         <div className="text-2xl font-bold text-gray-800 mb-2">
                             🎊 皆さまお疲れさまでした！ 🎊
                         </div>
@@ -996,13 +1314,13 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 <div className="flex gap-4 justify-center">
                     <button
                         onClick={() => window.location.reload()}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-xl text-lg font-bold hover:bg-blue-700"
+                        className="px-6 py-3 bg-blue-600 text-white rounded-xl text-lg font-bold hover:bg-blue-700 transition-colors"
                     >
                         再読み込み
                     </button>
                     <button
                         onClick={leaveQuiz}
-                        className="px-6 py-3 bg-gray-600 text-white rounded-xl text-lg font-bold hover:bg-gray-700"
+                        className="px-6 py-3 bg-gray-600 text-white rounded-xl text-lg font-bold hover:bg-gray-700 transition-colors"
                     >
                         戻る
                     </button>
@@ -1010,4 +1328,191 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             </div>
         </div>
     );
+}
+
+// CSS アニメーション用のスタイル
+const styles = `
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40%, 43% {
+    transform: translateY(-15px);
+  }
+  70% {
+    transform: translateY(-7px);
+  }
+  90% {
+    transform: translateY(-3px);
+  }
+}
+
+/* タイマーの色変化アニメーション */
+@keyframes warningPulse {
+  0% {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+  50% {
+    background-color: #fecaca;
+    color: #dc2626;
+  }
+  100% {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+}
+
+/* カウントダウンのアニメーション */
+@keyframes countdownScale {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.countdown-number {
+  animation: countdownScale 1s ease-in-out;
+}
+
+/* 正解・不正解のアニメーション */
+@keyframes correctAnswer {
+  0% {
+    transform: scale(1);
+    background-color: #dcfce7;
+  }
+  50% {
+    transform: scale(1.05);
+    background-color: #bbf7d0;
+  }
+  100% {
+    transform: scale(1);
+    background-color: #dcfce7;
+  }
+}
+
+@keyframes incorrectAnswer {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* ホバーエフェクト */
+.option-button {
+  transition: all 0.3s ease;
+}
+
+.option-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.option-button:active {
+  transform: translateY(0);
+}
+
+/* 進行状況バーのアニメーション */
+.progress-bar {
+  transition: width 0.8s ease-in-out;
+}
+
+/* 参加者カードのホバーエフェクト */
+.participant-card {
+  transition: all 0.3s ease;
+}
+
+.participant-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* ランキングカードのアニメーション */
+.ranking-card {
+  transition: all 0.4s ease;
+}
+
+.ranking-card.my-result {
+  animation: myResultHighlight 2s ease-in-out infinite;
+}
+
+@keyframes myResultHighlight {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+  }
+}
+
+/* 音量コントロールのスタイル */
+.volume-control {
+  transition: all 0.2s ease;
+}
+
+.volume-control:hover {
+  transform: scale(1.05);
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  .question-text {
+    font-size: 1.5rem;
+    line-height: 1.4;
+  }
+  
+  .option-button {
+    padding: 1rem;
+    font-size: 1.1rem;
+  }
+  
+  .timer-display {
+    font-size: 1.5rem;
+    padding: 0.5rem 1rem;
+  }
+}
+`;
+
+// スタイルをドキュメントに追加
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
 }
