@@ -319,7 +319,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 setAnswers([]);
                 setSelectedAnswer(null);
                 setShowExplanation(false);
-                setQuestionTransitionState('idle');
+                setQuestionTransitionState('waiting_for_first_question'); // 最初の問題を待つ状態
             });
 
             socketRef.current.on('quiz-question', ({ question, index, timeLimit }) => {
@@ -350,12 +350,12 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
 
             socketRef.current.on('quiz-finished', ({ results }) => {
-                console.log('Quiz finished with results:', results);
+                console.log('🎯 Quiz finished with results:', results);
                 if (!mountedRef.current) return;
                 
                 setFinalResults(results);
                 setRoomStatus(QUIZ_ROOM_STATUS.FINISHED);
-                setQuestionTransitionState('idle');
+                setQuestionTransitionState('finished'); // 明確に終了状態を設定
                 stopTimer();
                 
                 // 終了音を再生
@@ -812,6 +812,22 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         );
     }
 
+    // クイズ開始直後の待機画面
+    if (roomStatus === QUIZ_ROOM_STATUS.IN_PROGRESS && questionTransitionState === 'waiting_for_first_question') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center">
+                <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md">
+                    <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">🎯 クイズを準備中...</h2>
+                    <p className="text-lg text-gray-600">
+                        まもなく最初の問題が始まります！<br />
+                        準備はよろしいですか？
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     // カウントダウン画面
     if (questionTransitionState === 'countdown') {
         return (
@@ -832,9 +848,10 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     }
 
     // クイズ進行中画面
-    if (roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME || 
+    if ((roomStatus === QUIZ_ROOM_STATUS.QUESTION_TIME || 
         roomStatus === QUIZ_ROOM_STATUS.ANSWER_TIME || 
-        roomStatus === QUIZ_ROOM_STATUS.RESULT_TIME) {
+        roomStatus === QUIZ_ROOM_STATUS.RESULT_TIME) &&
+        questionTransitionState !== 'finished') { // 終了状態でない場合のみ表示
         
         return (
             <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -1063,7 +1080,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     }
 
     // 最終結果画面
-    if (roomStatus === QUIZ_ROOM_STATUS.FINISHED && finalResults) {
+    if (roomStatus === QUIZ_ROOM_STATUS.FINISHED && finalResults && questionTransitionState === 'finished') {
         const myResult = finalResults.find(r => r.userId === userId);
         const sortedResults = [...finalResults].sort((a, b) => b.score.totalScore - a.score.totalScore);
         
@@ -1379,7 +1396,24 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         );
     }
 
-    // デフォルト画面（何かエラーが起きた場合など）
+    // デフォルト画面（何かエラーが起きた場合など） - 条件を厳格化
+    if (roomStatus === QUIZ_ROOM_STATUS.WAITING || 
+        connectionStatus === 'error' || 
+        connectionStatus === 'connecting') {
+        // これらの状態は既に上で処理されているので、ここには来ないはず
+        console.log('🎯 Unexpected state in default screen:', { roomStatus, connectionStatus, questionTransitionState });
+        return null;
+    }
+
+    // 本当に予期しない状態の場合のみ表示
+    console.warn('🎯 Unexpected application state:', { 
+        roomStatus, 
+        connectionStatus, 
+        questionTransitionState, 
+        hasCurrentQuestion: !!currentQuestion,
+        hasFinalResults: !!finalResults 
+    });
+
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
             <div className="text-center">
@@ -1387,6 +1421,9 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 <div className="text-2xl font-bold text-gray-600 mb-4">何かおかしいようです</div>
                 <div className="text-lg text-gray-500 mb-6">
                     ページを再読み込みしてみてください
+                </div>
+                <div className="text-sm text-gray-400 mb-4">
+                    デバッグ情報: roomStatus={roomStatus}, questionTransitionState={questionTransitionState}
                 </div>
                 <div className="flex gap-4 justify-center">
                     <button
