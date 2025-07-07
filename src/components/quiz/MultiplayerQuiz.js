@@ -32,6 +32,8 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // 問題開始関数（useCallbackで依存関係を明確化）
     const startQuestionCallback = useCallback((question, timeLimit, index) => {
+        console.log('Starting question:', question.question, 'Index:', index);
+        
         setCurrentQuestion(question);
         setCurrentQuestionIndex(index);
         setSelectedAnswer(null);
@@ -228,13 +230,16 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         setRoomStatus(QUIZ_ROOM_STATUS.RESULT_TIME);
         setShowExplanation(true);
         
-        // 正解/不正解の表示用に一時的に正解情報を保存
-        setCurrentQuestion(prev => ({
-            ...prev,
-            correctAnswer,
-            explanation,
-            participantAnswers
-        }));
+        // 正解/不正解の表示用に正解情報を保存（既存の問題データに追加）
+        setCurrentQuestion(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                correctAnswer,
+                explanation,
+                participantAnswers
+            };
+        });
     };
 
     // クイズ設定更新（ホストのみ）

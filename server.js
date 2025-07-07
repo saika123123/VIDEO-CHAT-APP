@@ -574,7 +574,10 @@ io.on('connection', (socket) => {
 // 次の問題を送信
 function sendNextQuestion(roomId, questionIndex) {
     const room = quizRooms.get(roomId);
-    if (!room || questionIndex >= room.questions.length) return;
+    if (!room || questionIndex >= room.questions.length) {
+        console.log(`Cannot send question ${questionIndex} for room ${roomId}: room not found or invalid index`);
+        return;
+    }
 
     const question = room.questions[questionIndex];
     room.currentQuestionIndex = questionIndex;
@@ -587,12 +590,15 @@ function sendNextQuestion(roomId, questionIndex) {
 
     console.log(`Sending question ${questionIndex + 1}/${room.questions.length} to room ${roomId}`);
 
-    // 問題を送信
+    // 問題を送信（正解と解説を除外）
     io.to(roomId).emit('quiz-question', {
         question: {
-            ...question,
-            correctAnswer: undefined, // 正解は隠す
-            explanation: undefined    // 解説も隠す
+            id: question.id,
+            question: question.question,
+            options: question.options,
+            difficulty: question.difficulty,
+            category: question.category
+            // correctAnswerとexplanationは意図的に除外
         },
         index: questionIndex,
         timeLimit: room.settings.timeLimit
@@ -600,7 +606,10 @@ function sendNextQuestion(roomId, questionIndex) {
 
     // 制限時間後に自動的に結果表示
     setTimeout(() => {
-        showQuestionResults(roomId, questionIndex);
+        const currentRoom = quizRooms.get(roomId);
+        if (currentRoom && currentRoom.currentQuestionIndex === questionIndex) {
+            showQuestionResults(roomId, questionIndex);
+        }
     }, room.settings.timeLimit * 1000);
 }
 
@@ -630,26 +639,16 @@ function showQuestionResults(roomId, questionIndex) {
         participantAnswers
     });
 
-    // 最後の問題の場合は、しばらく後にクイズを終了
+    // 次の処理を決定
     if (questionIndex >= room.questions.length - 1) {
+        // 最後の問題の場合は、5秒後にクイズを終了
         setTimeout(() => {
             finishQuiz(roomId);
         }, 5000);
     } else {
+        // 次の問題がある場合は、5秒後に次の問題を送信
         setTimeout(() => {
-            // 参加者の回答状況をリセット
-            room.participants.forEach(p => { p.hasAnswered = false; });
-            
-            const nextQuestion = room.questions[questionIndex + 1];
-            io.to(roomId).emit('quiz-question', {
-                question: {
-                    ...nextQuestion,
-                    correctAnswer: undefined,
-                    explanation: undefined
-                },
-                index: questionIndex + 1,
-                timeLimit: room.settings.timeLimit
-            });
+            sendNextQuestion(roomId, questionIndex + 1);
         }, 5000);
     }
 }
