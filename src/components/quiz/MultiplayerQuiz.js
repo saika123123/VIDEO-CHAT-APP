@@ -177,6 +177,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     const [countdownValue, setCountdownValue] = useState(0);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [soundVolume, setSoundVolume] = useState(0.7);
+    const [showResultSymbol, setShowResultSymbol] = useState(null); // 'correct', 'incorrect', null
 
     // Refs
     const socketRef = useRef();
@@ -210,6 +211,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
     const startQuestionCountdown = useCallback((question, timeLimit, index) => {
         setQuestionTransitionState('countdown');
         setCountdownValue(3);
+        setShowResultSymbol(null); // 結果シンボルをリセット
         
         // カウントダウン実行
         let count = 3;
@@ -449,12 +451,22 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         setQuestionTransitionState('results');
         setShowExplanation(true);
         
-        // 正解/不正解音を再生
+        // 正解/不正解の大きなシンボルを表示
         if (selectedAnswer === correctAnswer) {
+            setShowResultSymbol('correct');
             soundManagerRef.current?.playCorrectSound();
         } else if (selectedAnswer !== null) {
+            setShowResultSymbol('incorrect');
             soundManagerRef.current?.playIncorrectSound();
+        } else {
+            // 未回答の場合
+            setShowResultSymbol('timeout');
         }
+        
+        // 3秒後にシンボルを消す
+        setTimeout(() => {
+            setShowResultSymbol(null);
+        }, 3000);
         
         // 正解/不正解の表示用に正解情報を保存
         setCurrentQuestion(prev => {
@@ -800,6 +812,41 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
                 <div className="max-w-4xl mx-auto">
+                    {/* 正解/不正解の大きなシンボル表示 */}
+                    {showResultSymbol && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                            <div className={`text-center transform transition-all duration-500 ${
+                                showResultSymbol === 'correct' ? 'animate-bounce' : 
+                                showResultSymbol === 'incorrect' ? 'animate-shake' : 'animate-pulse'
+                            }`}>
+                                {showResultSymbol === 'correct' && (
+                                    <>
+                                        <div className="text-9xl mb-4 text-green-500 font-black">○</div>
+                                        <div className="text-4xl font-bold text-green-600 bg-white px-8 py-4 rounded-2xl shadow-2xl">
+                                            正解！
+                                        </div>
+                                    </>
+                                )}
+                                {showResultSymbol === 'incorrect' && (
+                                    <>
+                                        <div className="text-9xl mb-4 text-red-500 font-black">×</div>
+                                        <div className="text-4xl font-bold text-red-600 bg-white px-8 py-4 rounded-2xl shadow-2xl">
+                                            不正解...
+                                        </div>
+                                    </>
+                                )}
+                                {showResultSymbol === 'timeout' && (
+                                    <>
+                                        <div className="text-9xl mb-4 text-gray-500 font-black">⏰</div>
+                                        <div className="text-4xl font-bold text-gray-600 bg-white px-8 py-4 rounded-2xl shadow-2xl">
+                                            時間切れ
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* ヘッダー情報 */}
                     <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
                         <div className="flex justify-between items-center flex-wrap gap-4">
