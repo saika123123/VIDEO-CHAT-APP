@@ -209,6 +209,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // 問題開始のカウントダウン
     const startQuestionCountdown = useCallback((question, timeLimit, index) => {
+        console.log('Starting countdown for question index:', index);
         setQuestionTransitionState('countdown');
         setCountdownValue(3);
         setShowResultSymbol(null); // 結果シンボルをリセット
@@ -225,9 +226,10 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                 
                 // 問題表示開始
                 setTimeout(() => {
+                    console.log('Setting question index to:', index);
                     setQuestionTransitionState('showing');
                     setCurrentQuestion(question);
-                    setCurrentQuestionIndex(index);
+                    setCurrentQuestionIndex(index); // ここで正しいインデックスを設定
                     setSelectedAnswer(null);
                     setShowExplanation(false);
                     setRoomStatus(QUIZ_ROOM_STATUS.QUESTION_TIME);
@@ -317,9 +319,10 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
             });
 
             socketRef.current.on('quiz-question', ({ question, index, timeLimit }) => {
-                console.log('New question received:', question);
+                console.log('New question received:', question, 'Index:', index);
                 if (!mountedRef.current) return;
                 
+                // インデックスを直接渡す（サーバーから送られてくるインデックスをそのまま使用）
                 startQuestionCallback(question, timeLimit, index);
             });
 
@@ -452,14 +455,16 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
         setShowExplanation(true);
         
         // 正解/不正解の大きなシンボルを表示
-        if (selectedAnswer === correctAnswer) {
+        if (selectedAnswer !== null && selectedAnswer === correctAnswer) {
+            // 正解の場合
             setShowResultSymbol('correct');
             soundManagerRef.current?.playCorrectSound();
-        } else if (selectedAnswer !== null) {
+        } else if (selectedAnswer !== null && selectedAnswer !== correctAnswer) {
+            // 不正解の場合（回答はしたが間違い）
             setShowResultSymbol('incorrect');
             soundManagerRef.current?.playIncorrectSound();
         } else {
-            // 未回答の場合
+            // 未回答の場合（時間切れ）
             setShowResultSymbol('timeout');
         }
         
@@ -787,6 +792,9 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
 
     // カウントダウン画面
     if (questionTransitionState === 'countdown') {
+        // カウントダウン中は次に表示する問題番号を使用
+        const nextQuestionNumber = currentQuestionIndex + 1;
+        
         return (
             <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
                 <div className="text-center">
@@ -794,7 +802,7 @@ export default function MultiplayerQuiz({ roomId, userId, userName }) {
                         {countdownValue}
                     </div>
                     <div className="text-3xl font-bold text-gray-700 mb-4">
-                        問題 {currentQuestionIndex + 1} を準備中...
+                        問題 {nextQuestionNumber} を準備中...
                     </div>
                     <div className="text-xl text-gray-600">
                         まもなく問題が表示されます
