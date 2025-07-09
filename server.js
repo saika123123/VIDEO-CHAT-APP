@@ -1,12 +1,15 @@
-const express = require('express');
-const http = require('http');
-const fs = require('fs');
-const { Server } = require('socket.io');
-const cors = require('cors');
+import cors from 'cors';
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import {
+    calculateScore,
+    getMixedQuestions,
+    getQuestionsByCategory
+} from './src/lib/quizData.js';
 
 const app = express();
-
-const server = http.createServer(app);
+const server = createServer(app);
 
 app.use(cors());
 
@@ -27,135 +30,6 @@ const activeRecordings = new Map();
 
 // クイズ用：クイズルーム管理用のMap
 const quizRooms = new Map();
-
-// クイズデータ（サンプル）
-const QUIZ_QUESTIONS = {
-    mixed: [
-        {
-            id: 'n001',
-            question: '昭和の人気歌手「美空ひばり」の代表曲は？',
-            options: ['津軽海峡冬景色', '川の流れのように', '津軽半島', '青春'],
-            correctAnswer: 1,
-            explanation: '「川の流れのように」は美空ひばりさんの代表曲の一つで、1989年にリリースされました。',
-            difficulty: 'easy',
-            category: 'nostalgia'
-        },
-        {
-            id: 'g001',
-            question: '富士山があるのは静岡県と、もう一つはどこの県？',
-            options: ['神奈川県', '山梨県', '長野県', '愛知県'],
-            correctAnswer: 1,
-            explanation: '富士山は静岡県と山梨県にまたがる日本最高峰の山です。',
-            difficulty: 'easy',
-            category: 'geography'
-        },
-        {
-            id: 'p001',
-            question: '「猿も木から○○」何が入るでしょう？',
-            options: ['飛ぶ', '落ちる', '降りる', '跳ねる'],
-            correctAnswer: 1,
-            explanation: '「猿も木から落ちる」は、上手な人でも失敗することがあるという意味です。',
-            difficulty: 'easy',
-            category: 'proverbs'
-        },
-        {
-            id: 's001',
-            question: '春の七草に含まれていないものはどれ？',
-            options: ['せり', 'なずな', 'たんぽぽ', 'すずな'],
-            correctAnswer: 2,
-            explanation: 'たんぽぽは春の七草には含まれていません。春の七草は1月7日に食べる習慣があります。',
-            difficulty: 'easy',
-            category: 'seasonal'
-        },
-        {
-            id: 'h001',
-            question: '東京オリンピックが初めて開催されたのは？',
-            options: ['1962年', '1964年', '1966年', '1968年'],
-            correctAnswer: 1,
-            explanation: '1964年の東京オリンピックは戦後復興の象徴的な出来事でした。',
-            difficulty: 'easy',
-            category: 'history'
-        },
-        {
-            id: 'f001',
-            question: '大阪名物として有名でないものは？',
-            options: ['たこ焼き', 'お好み焼き', '明石焼き', 'もんじゃ焼き'],
-            correctAnswer: 3,
-            explanation: 'もんじゃ焼きは東京の下町の名物料理です。',
-            difficulty: 'easy',
-            category: 'food'
-        },
-        {
-            id: 'n002',
-            question: 'テレビ番組「8時だヨ!全員集合」で有名だったコメディグループは？',
-            options: ['ドリフターズ', 'てんぷくトリオ', 'クレージーキャッツ', 'ハナ肇とクレージーキャッツ'],
-            correctAnswer: 0,
-            explanation: 'ドリフターズが1969年から1985年まで放送された人気番組でした。',
-            difficulty: 'normal',
-            category: 'nostalgia'
-        },
-        {
-            id: 'g002',
-            question: '日本で一番面積が小さい都道府県は？',
-            options: ['東京都', '大阪府', '香川県', '沖縄県'],
-            correctAnswer: 2,
-            explanation: '香川県は日本で最も面積が小さい県で、うどんでも有名です。',
-            difficulty: 'normal',
-            category: 'geography'
-        },
-        {
-            id: 'p002',
-            question: '「石の上にも○年」何年でしょう？',
-            options: ['一年', '二年', '三年', '五年'],
-            correctAnswer: 2,
-            explanation: '「石の上にも三年」は、どんなに辛くても辛抱強く続ければ成功するという意味です。',
-            difficulty: 'normal',
-            category: 'proverbs'
-        },
-        {
-            id: 's002',
-            question: '冬至に食べる習慣があるものは？',
-            options: ['かぼちゃ', 'スイカ', 'きゅうり', 'トマト'],
-            correctAnswer: 0,
-            explanation: '冬至にかぼちゃを食べると風邪をひかないという言い伝えがあります。',
-            difficulty: 'normal',
-            category: 'seasonal'
-        }
-    ]
-};
-
-// クイズ用ヘルパー関数
-function getRandomQuestions(count = 5) {
-    const allQuestions = QUIZ_QUESTIONS.mixed;
-    const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
-}
-
-function calculateScore(answers, questions) {
-    let correctCount = 0;
-    let totalScore = 0;
-    
-    answers.forEach((answer, index) => {
-        const question = questions[index];
-        if (question && answer !== null && answer === question.correctAnswer) {
-            correctCount++;
-            // 難易度に応じて得点を変える
-            switch (question.difficulty) {
-                case 'easy': totalScore += 10; break;
-                case 'normal': totalScore += 15; break;
-                case 'hard': totalScore += 20; break;
-                default: totalScore += 10;
-            }
-        }
-    });
-    
-    return {
-        correctCount,
-        totalQuestions: questions.length,
-        totalScore,
-        percentage: Math.round((correctCount / questions.length) * 100)
-    };
-}
 
 // ビデオ通話用デバッグ関数
 const logRoomState = (roomId) => {
@@ -262,8 +136,13 @@ io.on('connection', (socket) => {
 
             console.log(`Starting quiz in room ${targetRoomId} with settings:`, settings);
 
-            // 問題を生成
-            const questions = getRandomQuestions(settings.questionCount);
+            // 設定に基づいて問題を生成（quizData.jsの関数を使用）
+            let questions;
+            if (settings.category === 'mixed') {
+                questions = getMixedQuestions(null, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
+            } else {
+                questions = getQuestionsByCategory(settings.category, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
+            }
 
             room.questions = questions;
             room.settings = settings;
@@ -659,6 +538,8 @@ function finishQuiz(roomId) {
     if (!room) return;
 
     const participants = Array.from(room.participants.values());
+    
+    // quizData.jsのcalculateScore関数を使用
     const results = participants.map(participant => ({
         userId: participant.userId,
         userName: participant.userName,
