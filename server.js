@@ -1,11 +1,19 @@
 import cors from 'cors';
 import express from 'express';
+import fs from 'fs';
 import { createServer } from 'http';
+import path from 'path';
 import { Server } from 'socket.io';
+import { fileURLToPath } from 'url';
+
+// ESモジュールで__dirnameを使うための設定
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// デフォルトのクイズデータをインポート
 import {
     calculateScore,
-    getMixedQuestions,
-    getQuestionsByCategory
+    QUIZ_QUESTIONS as DEFAULT_QUIZ_QUESTIONS
 } from './src/lib/quizData.js';
 
 const app = express();
@@ -15,12 +23,11 @@ app.use(cors());
 
 const io = new Server(server, {
     cors: {
-        origin: "*", // すべてのオリジンからのアクセスを許可
+        origin: "*",
         methods: ["GET", "POST"],
         credentials: true
     },
-    // デフォルトで/socket.io/パスを使用
-    transports: ['polling', 'websocket'] // ポーリングとWebSocket両方対応
+    transports: ['polling', 'websocket']
 });
 
 // ビデオ通話用：ルームごとの参加者を管理するMap
@@ -30,6 +37,61 @@ const activeRecordings = new Map();
 
 // クイズ用：クイズルーム管理用のMap
 const quizRooms = new Map();
+
+// 動的にクイズデータを読み込む関数
+function loadDynamicQuizData() {
+    try {
+        const uploadedDataPath = path.join(__dirname, 'src/lib/quizDataFromExcel.json');
+        
+        if (fs.existsSync(uploadedDataPath)) {
+            console.log('Loading quiz data from Excel upload...');
+            const data = fs.readFileSync(uploadedDataPath, 'utf-8');
+            const uploadedQuestions = JSON.parse(data);
+            
+            // デフォルトとアップロードされたデータをマージ
+            return { ...DEFAULT_QUIZ_QUESTIONS, ...uploadedQuestions };
+        }
+    } catch (error) {
+        console.error('Error loading uploaded quiz data:', error);
+    }
+    
+    // エラー時またはファイルが存在しない場合はデフォルトを使用
+    return DEFAULT_QUIZ_QUESTIONS;
+}
+
+// カスタマイズされたクイズ関数
+const getQuestionsWithDynamicData = (category, difficulty, count) => {
+    const dynamicQuestions = loadDynamicQuizData();
+    const questions = dynamicQuestions[category] || [];
+
+    let filteredQuestions = questions;
+    if (difficulty && difficulty !== 'mixed') {
+        filteredQuestions = questions.filter(q => q.difficulty === difficulty);
+    }
+
+    const shuffled = [...filteredQuestions].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+};
+
+const getMixedQuestionsWithDynamicData = (categories, difficulty, count) => {
+    const dynamicQuestions = loadDynamicQuizData();
+    const categoriesToUse = categories || Object.keys(dynamicQuestions);
+    const allQuestions = [];
+
+    categoriesToUse.forEach(category => {
+        if (dynamicQuestions[category]) {
+            const questions = dynamicQuestions[category];
+            if (difficulty && difficulty !== 'mixed') {
+                allQuestions.push(...questions.filter(q => q.difficulty === difficulty));
+            } else {
+                allQuestions.push(...questions);
+            }
+        }
+    });
+
+    const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+};
 
 // ビデオ通話用デバッグ関数
 const logRoomState = (roomId) => {
@@ -136,12 +198,12 @@ io.on('connection', (socket) => {
 
             console.log(`Starting quiz in room ${targetRoomId} with settings:`, settings);
 
-            // 設定に基づいて問題を生成（quizData.jsの関数を使用）
+            // 動的データを使用して問題を生成
             let questions;
             if (settings.category === 'mixed') {
-                questions = getMixedQuestions(null, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
+                questions = getMixedQuestionsWithDynamicData(null, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
             } else {
-                questions = getQuestionsByCategory(settings.category, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
+                questions = getQuestionsWithDynamicData(settings.category, settings.difficulty === 'mixed' ? null : settings.difficulty, settings.questionCount);
             }
 
             room.questions = questions;
@@ -539,7 +601,7 @@ function finishQuiz(roomId) {
 
     const participants = Array.from(room.participants.values());
     
-    // quizData.jsのcalculateScore関数を使用
+    // calculateScore関数を使用してスコアを計算
     const results = participants.map(participant => ({
         userId: participant.userId,
         userName: participant.userName,
@@ -623,6 +685,14 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Video chat and Quiz features are available`);
     console.log(`Socket.IO server is ready`);
+    
+    // 起動時に動的データの有無を確認
+    const uploadedDataPath = path.join(__dirname, 'src/lib/quizDataFromExcel.json');
+    if (fs.existsSync(uploadedDataPath)) {
+        console.log('Excel quiz data found and will be used');
+    } else {
+        console.log('Using default quiz data');
+    }
 });
 
 // プロセスの終了時の処理

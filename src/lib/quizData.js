@@ -1,7 +1,4 @@
-// src/lib/quizData.js - 更新版（動的データ読み込み対応）
-
-import fs from 'fs';
-import path from 'path';
+// src/lib/quizData.js - クライアントセーフ版
 
 // クイズカテゴリの定義
 export const QUIZ_CATEGORIES = {
@@ -50,51 +47,6 @@ export const DIFFICULTY_LEVELS = {
     hard: { id: 'hard', name: 'むずかしい', icon: '🧠', timeLimit: 20 }
 };
 
-// デフォルトのクイズ問題データ
-const DEFAULT_QUIZ_QUESTIONS = {
-    nostalgia: [
-        {
-            id: 'n001',
-            question: '昭和の人気歌手「美空ひばり」の代表曲は？',
-            options: ['津軽海峡冬景色', '川の流れのように', '津軽半島', '青春'],
-            correctAnswer: 1,
-            explanation: '「川の流れのように」は美空ひばりさんの代表曲の一つで、1989年にリリースされました。',
-            difficulty: 'easy'
-        }
-        // ... 他のデフォルト問題
-    ],
-    // ... 他のカテゴリ
-};
-
-// 動的にクイズデータを読み込む関数
-function loadQuizQuestions() {
-    try {
-        // Excelからアップロードされたデータのパス
-        const uploadedDataPath = path.join(process.cwd(), 'src/lib/quizDataFromExcel.json');
-        
-        // ファイルが存在するか確認
-        if (fs.existsSync(uploadedDataPath)) {
-            const data = fs.readFileSync(uploadedDataPath, 'utf-8');
-            const uploadedQuestions = JSON.parse(data);
-            
-            // アップロードされたデータとデフォルトをマージ
-            // （アップロードされたデータを優先）
-            return {
-                ...DEFAULT_QUIZ_QUESTIONS,
-                ...uploadedQuestions
-            };
-        }
-    } catch (error) {
-        console.error('Error loading uploaded quiz data:', error);
-    }
-    
-    // エラー時またはファイルが存在しない場合はデフォルトを返す
-    return DEFAULT_QUIZ_QUESTIONS;
-}
-
-// エクスポート用のクイズ問題データ
-export const QUIZ_QUESTIONS = loadQuizQuestions();
-
 // クイズルームの状態管理
 export const QUIZ_ROOM_STATUS = {
     WAITING: 'waiting',
@@ -104,6 +56,45 @@ export const QUIZ_ROOM_STATUS = {
     ANSWER_TIME: 'answer_time',
     RESULT_TIME: 'result_time',
     FINISHED: 'finished'
+};
+
+// デフォルトのクイズ問題データ（既存の全データをここに含める）
+export const QUIZ_QUESTIONS = {
+    nostalgia: [
+        // やさしい問題
+        {
+            id: 'n001',
+            question: '昭和の人気歌手「美空ひばり」の代表曲は？',
+            options: ['津軽海峡冬景色', '川の流れのように', '津軽半島', '青春'],
+            correctAnswer: 1,
+            explanation: '「川の流れのように」は美空ひばりさんの代表曲の一つで、1989年にリリースされました。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'n002',
+            question: 'テレビ番組「8時だヨ!全員集合」で有名だったコメディグループは？',
+            options: ['ドリフターズ', 'てんぷくトリオ', 'クレージーキャッツ', 'ハナ肇とクレージーキャッツ'],
+            correctAnswer: 0,
+            explanation: 'ドリフターズが1969年から1985年まで放送された人気番組でした。',
+            difficulty: 'easy'
+        },
+        // ... 残りの問題データも全て含める
+    ],
+    geography: [
+        // 既存の地理問題データ
+    ],
+    proverbs: [
+        // 既存のことわざ問題データ
+    ],
+    seasonal: [
+        // 既存の季節問題データ
+    ],
+    history: [
+        // 既存の歴史問題データ
+    ],
+    food: [
+        // 既存の料理・食べ物問題データ
+    ]
 };
 
 // クイズ関連のユーティリティ関数
