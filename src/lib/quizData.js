@@ -37,6 +37,12 @@ export const QUIZ_CATEGORIES = {
         name: '料理・食べ物',
         icon: '🍱',
         description: '郷土料理、昔ながらの食べ物'
+    },
+    coffee: {
+        id: 'coffee',
+        name: 'コーヒー',
+        icon: '☕',
+        description: 'コーヒーの基礎知識、豆の種類、淹れ方など'
     }
 };
 
@@ -892,6 +898,493 @@ export const QUIZ_QUESTIONS = {
             options: ['群馬県', '栃木県', '新潟県', '長野県'],
             correctAnswer: 2,
             explanation: 'へぎそばは新潟県の特産品で、海藻をつなぎに使用します。',
+            difficulty: 'hard'
+        }
+    ],
+    coffee: [
+        // やさしい問題（20問）
+        {
+            id: 'c001',
+            question: 'コーヒーの原料となる植物の実は何と呼ばれる？',
+            options: ['コーヒー豆', 'コーヒーチェリー', 'コーヒーフルーツ', 'コーヒーベリー'],
+            correctAnswer: 1,
+            explanation: 'コーヒーの実は「コーヒーチェリー」と呼ばれ、その中にある種子がコーヒー豆となります。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c002',
+            question: '世界で最もコーヒー消費量が多い国は？',
+            options: ['ブラジル', 'アメリカ', 'ドイツ', 'イタリア'],
+            correctAnswer: 1,
+            explanation: 'アメリカが世界最大のコーヒー消費国で、年間約4億杯以上のコーヒーが飲まれています。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c003',
+            question: 'エスプレッソはどこの国発祥？',
+            options: ['フランス', 'ドイツ', 'イタリア', 'トルコ'],
+            correctAnswer: 2,
+            explanation: 'エスプレッソはイタリア発祥で、19世紀末にミラノで生まれました。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c004',
+            question: 'カフェインレスコーヒーは英語で何という？',
+            options: ['ノーカフェ', 'デカフェ', 'レスカフェ', 'フリーカフェ'],
+            correctAnswer: 1,
+            explanation: 'カフェインレスコーヒーは「デカフェ（Decaf）」と呼ばれます。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c005',
+            question: 'コーヒーに含まれる主な覚醒成分は？',
+            options: ['カフェイン', 'テオブロミン', 'テアニン', 'タンニン'],
+            correctAnswer: 0,
+            explanation: 'コーヒーの覚醒効果の主成分はカフェインです。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c006',
+            question: 'アイスコーヒーを最初に作ったのはどこの国？',
+            options: ['アメリカ', '日本', 'フランス', 'オランダ'],
+            correctAnswer: 1,
+            explanation: '現在のようなアイスコーヒーは、実は日本で発明されました。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c007',
+            question: 'コーヒーの木は何科の植物？',
+            options: ['バラ科', 'アカネ科', 'ウルシ科', 'クワ科'],
+            correctAnswer: 1,
+            explanation: 'コーヒーの木はアカネ科に属する常緑樹です。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c008',
+            question: 'コーヒーが最初に発見されたとされる国は？',
+            options: ['エチオピア', 'イエメン', 'トルコ', 'ブラジル'],
+            correctAnswer: 0,
+            explanation: 'コーヒーはエチオピアが発祥地とされており、山羊飼いの少年が発見したという伝説があります。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c009',
+            question: 'カプチーノの名前の由来は？',
+            options: ['地名', '人名', '修道士の服', '楽器の名前'],
+            correctAnswer: 2,
+            explanation: 'カプチーノは、カプチン修道会の修道士の着る茶色の服の色に似ていることから名付けられました。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c010',
+            question: 'モカコーヒーの「モカ」とは？',
+            options: ['豆の品種', '港の名前', '山の名前', '人の名前'],
+            correctAnswer: 1,
+            explanation: 'モカは、イエメンのモカ港から出荷されたコーヒーに由来します。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c011',
+            question: 'レギュラーコーヒーとは何のこと？',
+            options: ['普通のコーヒー', '豆から挽いたコーヒー', '砂糖入りコーヒー', 'ミルク入りコーヒー'],
+            correctAnswer: 1,
+            explanation: 'レギュラーコーヒーとは、コーヒー豆を焙煎・粉砕したもので淹れるコーヒーのことです。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c012',
+            question: 'コーヒーの実の中にある種子は通常何個？',
+            options: ['1個', '2個', '3個', '4個'],
+            correctAnswer: 1,
+            explanation: 'コーヒーチェリーの中には通常2個の種子（コーヒー豆）が入っています。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c013',
+            question: 'コーヒーの苦味成分の主なものは？',
+            options: ['カフェイン', 'クロロゲン酸', 'タンニン', 'カフェオール'],
+            correctAnswer: 1,
+            explanation: 'コーヒーの苦味の主成分はクロロゲン酸とその分解物です。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c014',
+            question: '日本にコーヒーが伝来したのはいつ頃？',
+            options: ['江戸時代', '明治時代', '大正時代', '昭和時代'],
+            correctAnswer: 0,
+            explanation: '日本にコーヒーが伝来したのは江戸時代後期の18世紀頃とされています。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c015',
+            question: 'ブルーマウンテンコーヒーの産地は？',
+            options: ['ブラジル', 'コロンビア', 'ジャマイカ', 'ハワイ'],
+            correctAnswer: 2,
+            explanation: 'ブルーマウンテンはジャマイカの標高の高い山地で栽培される高級コーヒーです。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c016',
+            question: 'コーヒーの焙煎度で最も浅いものは？',
+            options: ['ライトロースト', 'シナモンロースト', 'ミディアムロースト', 'ハイロースト'],
+            correctAnswer: 0,
+            explanation: 'ライトローストが最も浅い焙煎度で、酸味が強く苦味は少ないのが特徴です。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c017',
+            question: 'コーヒーを淹れるのに適した水温は？',
+            options: ['70-80℃', '80-90℃', '90-95℃', '95-100℃'],
+            correctAnswer: 2,
+            explanation: 'コーヒーを淹れるのに適した水温は90-95℃とされています。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c018',
+            question: 'インスタントコーヒーはいつ頃発明された？',
+            options: ['1800年代', '1900年代初頭', '1950年代', '1970年代'],
+            correctAnswer: 1,
+            explanation: 'インスタントコーヒーは1901年に加藤サトリ博士によって発明されました。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c019',
+            question: 'カフェオレとカフェラテの違いは？',
+            options: ['コーヒーの濃さ', '使う豆の種類', 'ミルクの種類', 'コーヒーの抽出方法'],
+            correctAnswer: 3,
+            explanation: 'カフェオレはドリップコーヒー、カフェラテはエスプレッソを使って作ります。',
+            difficulty: 'easy'
+        },
+        {
+            id: 'c020',
+            question: 'コーヒーの主な生産地帯を何という？',
+            options: ['コーヒーゾーン', 'コーヒーベルト', 'コーヒーライン', 'コーヒーエリア'],
+            correctAnswer: 1,
+            explanation: '赤道を中心とした南北25度の地域を「コーヒーベルト」と呼びます。',
+            difficulty: 'easy'
+        },
+
+        // ふつう問題（20問）
+        {
+            id: 'c021',
+            question: 'アラビカ種とロブスタ種、カフェイン含有量が多いのは？',
+            options: ['アラビカ種', 'ロブスタ種', '同じ', '産地による'],
+            correctAnswer: 1,
+            explanation: 'ロブスタ種の方がアラビカ種の約2倍のカフェインを含有しています。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c022',
+            question: 'エスプレッソを抽出する理想的な時間は？',
+            options: ['15-20秒', '25-30秒', '35-40秒', '45-50秒'],
+            correctAnswer: 1,
+            explanation: 'エスプレッソの理想的な抽出時間は25-30秒とされています。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c023',
+            question: 'コーヒーの精製方法で「ウォッシュド」とは？',
+            options: ['水で洗う方法', '発酵後に水洗いする方法', '乾燥させる方法', '機械で処理する方法'],
+            correctAnswer: 1,
+            explanation: 'ウォッシュド製法は、果肉を除去後に発酵させ、水で洗浄してから乾燥させる方法です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c024',
+            question: 'サードウェーブコーヒーの特徴は？',
+            options: ['大量生産', '均一な味', '豆の個性重視', '低価格'],
+            correctAnswer: 2,
+            explanation: 'サードウェーブコーヒーは、豆の産地や品種の個性を重視する潮流です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c025',
+            question: 'コーヒーの「カッピング」とは？',
+            options: ['豆を挽くこと', 'コーヒーの品質評価', '焙煎すること', 'ブレンドすること'],
+            correctAnswer: 1,
+            explanation: 'カッピングは、コーヒーの香りや味を評価するテイスティング方法です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c026',
+            question: 'ピーベリーとは何？',
+            options: ['豆の品種', '焙煎度', '1つの実に1粒だけ入った豆', '欠陥豆'],
+            correctAnswer: 2,
+            explanation: 'ピーベリーは、通常2粒入りの実に1粒だけ入った丸い形の豆です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c027',
+            question: 'コーヒーの「ファーストクラック」とは？',
+            options: ['豆の選別', '焙煎中の音', '抽出開始', '豆の挽き方'],
+            correctAnswer: 1,
+            explanation: 'ファーストクラックは、焙煎中に豆が膨張してパチパチと音がする現象です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c028',
+            question: 'ゲイシャ種の原産地は？',
+            options: ['日本', 'エチオピア', 'パナマ', 'コロンビア'],
+            correctAnswer: 1,
+            explanation: 'ゲイシャ種はエチオピア原産で、現在はパナマなどで高品質なものが栽培されています。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c029',
+            question: 'コーヒーの「ブルーム」とは？',
+            options: ['花が咲くこと', '焙煎後のガス放出', '抽出時の泡立ち', '豆の変色'],
+            correctAnswer: 1,
+            explanation: 'ブルームは、焙煎されたコーヒー豆から二酸化炭素が放出される現象です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c030',
+            question: 'アフォガートとは？',
+            options: ['コーヒーの品種', 'エスプレッソをかけたデザート', '抽出方法', '焙煎度'],
+            correctAnswer: 1,
+            explanation: 'アフォガートは、バニラアイスクリームにエスプレッソをかけたイタリアのデザートです。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c031',
+            question: 'コーヒーの「シティロースト」の特徴は？',
+            options: ['最も浅い焙煎', '酸味が強い', '苦味と酸味のバランス', '最も深い焙煎'],
+            correctAnswer: 2,
+            explanation: 'シティローストは中深煎りで、酸味と苦味のバランスが取れた焙煎度です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c032',
+            question: 'コールドブリューの特徴は？',
+            options: ['高温で抽出', '短時間抽出', '低温で長時間抽出', '圧力をかけて抽出'],
+            correctAnswer: 2,
+            explanation: 'コールドブリューは、水または冷水で長時間（8-24時間）かけて抽出する方法です。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c033',
+            question: 'エアロプレスの発明者の職業は？',
+            options: ['エンジニア', 'バリスタ', 'フリスビーの発明者', '化学者'],
+            correctAnswer: 2,
+            explanation: 'エアロプレスは、フリスビーを発明したアラン・アドラーによって開発されました。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c034',
+            question: 'スペシャルティコーヒーの定義で重要なのは？',
+            options: ['価格', '産地の標高', 'カップスコア80点以上', 'ブランド名'],
+            correctAnswer: 2,
+            explanation: 'スペシャルティコーヒーは、カッピングスコア80点以上のコーヒーを指します。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c035',
+            question: 'ハンドドリップで「の」の字に注ぐ理由は？',
+            options: ['見た目を良くするため', '均一に抽出するため', '温度を下げるため', '伝統的な方法だから'],
+            correctAnswer: 1,
+            explanation: '「の」の字に注ぐことで、コーヒー粉全体に均一にお湯が行き渡ります。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c036',
+            question: 'コーヒーの「蒸らし」の目的は？',
+            options: ['温度を上げる', 'ガスを抜いて均一に抽出', '味を濃くする', '時間を稼ぐ'],
+            correctAnswer: 1,
+            explanation: '蒸らしは、コーヒー粉から二酸化炭素を抜いて、均一な抽出を促進します。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c037',
+            question: 'フレンチプレスの抽出時間は？',
+            options: ['1-2分', '3-4分', '5-6分', '7-8分'],
+            correctAnswer: 1,
+            explanation: 'フレンチプレスの理想的な抽出時間は3-4分とされています。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c038',
+            question: 'コーヒーの「欠点豆」でないものは？',
+            options: ['虫食い豆', '発酵豆', 'ピーベリー', '未熟豆'],
+            correctAnswer: 2,
+            explanation: 'ピーベリーは欠点豆ではなく、むしろ高品質とされることもあります。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c039',
+            question: 'エスプレッソの上にできる泡を何という？',
+            options: ['フォーム', 'クレマ', 'ミルク', 'バブル'],
+            correctAnswer: 1,
+            explanation: 'エスプレッソの上にできる黄金色の泡は「クレマ」と呼ばれます。',
+            difficulty: 'normal'
+        },
+        {
+            id: 'c040',
+            question: '世界最大のコーヒー生産国は？',
+            options: ['コロンビア', 'ベトナム', 'ブラジル', 'エチオピア'],
+            correctAnswer: 2,
+            explanation: 'ブラジルは世界最大のコーヒー生産国で、世界の約3分の1を生産しています。',
+            difficulty: 'normal'
+        },
+
+        // むずかしい問題（20問）
+        {
+            id: 'c041',
+            question: 'コーヒーの「ハニープロセス」とは？',
+            options: ['蜂蜜を加える方法', '果肉を残して乾燥させる方法', '甘い豆を選別する方法', '発酵を止める方法'],
+            correctAnswer: 1,
+            explanation: 'ハニープロセスは、果肉を部分的に残したまま乾燥させる精製方法です。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c042',
+            question: 'コーヒーの「テロワール」とは？',
+            options: ['品種の名前', '栽培環境が味に与える影響', '焙煎の技術', '抽出の方法'],
+            correctAnswer: 1,
+            explanation: 'テロワールは、土壌、気候、標高などの環境要因がコーヒーの味に与える影響を指します。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c043',
+            question: 'Q-グレーダーとは？',
+            options: ['コーヒー農家', 'コーヒー品質評価の資格', '焙煎士', 'バリスタの大会'],
+            correctAnswer: 1,
+            explanation: 'Q-グレーダーは、コーヒーの品質を専門的に評価する国際的な資格です。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c044',
+            question: 'コーヒーの「カスカラ」とは？',
+            options: ['豆の皮', '果肉部分', '欠点豆', '古い豆'],
+            correctAnswer: 1,
+            explanation: 'カスカラは、コーヒーチェリーの果肉を乾燥させたもので、お茶として飲まれます。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c045',
+            question: 'SCAスコアで90点以上のコーヒーは？',
+            options: ['スペシャルティ', 'プレミアム', 'アウトスタンディング', 'エクセレント'],
+            correctAnswer: 2,
+            explanation: 'SCA（Specialty Coffee Association）では、90点以上を「アウトスタンディング」と評価します。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c046',
+            question: 'コーヒーの「マイクロロット」とは？',
+            options: ['小さい豆', '少量生産の高品質豆', '欠点豆の分類', '焙煎の単位'],
+            correctAnswer: 1,
+            explanation: 'マイクロロットは、特定の区画で少量生産される高品質なコーヒーです。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c047',
+            question: 'アナエロビック発酵とは？',
+            options: ['空気がある状態での発酵', '無酸素状態での発酵', '高温での発酵', '短時間発酵'],
+            correctAnswer: 1,
+            explanation: 'アナエロビック発酵は、密閉容器内で無酸素状態にして行う発酵処理です。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c048',
+            question: 'コーヒーの「水分活性値」の理想的な範囲は？',
+            options: ['0.5-0.6', '0.6-0.65', '0.7-0.75', '0.8-0.85'],
+            correctAnswer: 1,
+            explanation: 'コーヒー豆の理想的な水分活性値は0.6-0.65とされています。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c049',
+            question: 'ブラジルの「プルプド」とは？',
+            options: ['品種名', '農園名', '精製方法', '等級名'],
+            correctAnswer: 2,
+            explanation: 'プルプドは、ブラジルで行われる機械的に果肉を除去する精製方法です。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c050',
+            question: 'COE（Cup of Excellence）の審査基準でないものは？',
+            options: ['クリーンカップ', 'スイートネス', 'プライス', 'オーバーオール'],
+            correctAnswer: 2,
+            explanation: 'COEの審査では価格（プライス）は評価基準に含まれません。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c051',
+            question: 'コーヒーの「チャフ」とは？',
+            options: ['生豆の薄皮', '焙煎時の煙', '抽出カス', '欠点豆'],
+            correctAnswer: 0,
+            explanation: 'チャフは、コーヒー生豆の表面についている薄い皮のことです。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c052',
+            question: 'エスプレッソのクレマの理想的な厚さは？',
+            options: ['1-2mm', '3-5mm', '6-8mm', '10mm以上'],
+            correctAnswer: 1,
+            explanation: 'エスプレッソのクレマの理想的な厚さは3-5mmとされています。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c053',
+            question: 'コーヒーの「デガッシング」の期間は？',
+            options: ['焙煎直後', '1-3日後', '4-14日後', '1ヶ月後'],
+            correctAnswer: 2,
+            explanation: 'デガッシング（ガス抜き）期間は焙煎後4-14日程度が理想的とされています。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c054',
+            question: 'V60ドリッパーの「V60」の意味は？',
+            options: ['ヴィクトリー60', '60度の角度', 'バージョン60', 'ボリューム60'],
+            correctAnswer: 1,
+            explanation: 'V60のVは円錐の形状、60は内側のリブが60度の螺旋角度になっていることから命名されました。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c055',
+            question: 'コーヒーの「カーボン法」とは？',
+            options: ['焙煎方法', 'カフェイン除去方法', '保存方法', '品質評価法'],
+            correctAnswer: 1,
+            explanation: 'カーボン法は、活性炭を使ってカフェインを除去するデカフェ製造方法の一つです。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c056',
+            question: 'コーヒーの「スクリーン」とは？',
+            options: ['豆のサイズ分類', '品質評価', '焙煎度', '抽出器具'],
+            correctAnswer: 0,
+            explanation: 'スクリーンは、コーヒー豆のサイズを分類する単位で、数字が大きいほど豆が大きいです。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c057',
+            question: 'エチオピアの伝統的なコーヒーセレモニーで使う道具は？',
+            options: ['エスプレッソマシン', 'ジェベナ', 'モカポット', 'フレンチプレス'],
+            correctAnswer: 1,
+            explanation: 'ジェベナは、エチオピアの伝統的なコーヒーセレモニーで使われる土製のポットです。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c058',
+            question: 'コーヒーの「ドライミル」の工程は？',
+            options: ['乾燥', '脱穀', '選別', 'すべて'],
+            correctAnswer: 3,
+            explanation: 'ドライミルでは、乾燥したパーチメントの除去、欠点豆の除去、サイズ別の選別などが行われます。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c059',
+            question: 'SCAのブリューイングコントロールチャートで推奨される抽出率は？',
+            options: ['15-18%', '18-22%', '22-26%', '26-30%'],
+            correctAnswer: 1,
+            explanation: 'SCAでは、理想的な抽出率を18-22%と定めています。',
+            difficulty: 'hard'
+        },
+        {
+            id: 'c060',
+            question: 'コーヒーの「バイオダイナミック農法」の特徴は？',
+            options: ['化学肥料使用', '月の満ち欠けを考慮', '大量生産', '機械化'],
+            correctAnswer: 1,
+            explanation: 'バイオダイナミック農法は、月の満ち欠けや天体の動きを考慮した有機農法の一種です。',
             difficulty: 'hard'
         }
     ]
