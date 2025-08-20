@@ -11,3 +11,76 @@ body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
 }
+
+/* スマホ向けビデオ通話最適化CSS */
+
+/* 横向き（landscape）の時のスタイル */
+@media (orientation: landscape) {
+  .landscape\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  
+  .landscape\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  
+  .landscape\:grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  
+  .landscape\:grid-cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* ビデオ要素の最適化 */
+.btn-mobile {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (min-width: 640px) {
+  .btn-mobile {
+    min-height: 56px;
+    min-width: 56px;
+    padding: 16px;
+  }
+}
+
+.btn-mobile-text {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .btn-mobile-text {
+    font-size: 12px;
+  }
+}
+
+/* ビデオ関連スタイル */
+.video-border {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  transition: border-color 0.3s ease;
+}
+
+.status-indicator {
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.high-contrast {
+  filter: contrast(1.1) brightness(1.05);
+}
+
+.readable-text {
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  font-weight: 600;
+}

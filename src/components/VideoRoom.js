@@ -250,24 +250,27 @@ export default function VideoRoom({ roomId, userId }) {
 
     // グリッドレイアウトの計算関数
     const getGridLayout = () => {
-        const totalParticipants = users.length + 1;  // 自分を含めた参加者数
+    const totalParticipants = users.length + 1;
 
-        if (totalParticipants <= 2) {
-            return 'grid-cols-1 md:grid-cols-2';
-        } else if (totalParticipants <= 4) {
-            return 'grid-cols-2';
-        } else if (totalParticipants <= 6) {
-            return 'grid-cols-2 md:grid-cols-3';
-        } else if (totalParticipants <= 9) {
-            return 'grid-cols-3';
-        } else if (totalParticipants <= 12) {
-            return 'grid-cols-3 md:grid-cols-4';
-        } else if (totalParticipants <= 16) {
-            return 'grid-cols-4';
-        } else {
-            return 'grid-cols-4 md:grid-cols-5';
-        }
-    };
+    // スマホ縦向き（portrait）とスマホ横向き・デスクトップ（landscape）で最適化
+    if (totalParticipants === 1) {
+        return 'grid-cols-1'; // 1人の場合は常に1列
+    } else if (totalParticipants === 2) {
+        return 'grid-cols-1 landscape:grid-cols-2'; // 縦向き：1列、横向き：2列
+    } else if (totalParticipants <= 4) {
+        return 'grid-cols-2 landscape:grid-cols-2'; // 縦向き：2×2、横向き：2×2
+    } else if (totalParticipants <= 6) {
+        return 'grid-cols-2 landscape:grid-cols-3'; // 縦向き：2×3、横向き：3×2
+    } else if (totalParticipants <= 9) {
+        return 'grid-cols-3 landscape:grid-cols-3'; // 縦向き：3×3、横向き：3×3
+    } else if (totalParticipants <= 12) {
+        return 'grid-cols-3 landscape:grid-cols-4'; // 縦向き：3×4、横向き：4×3
+    } else if (totalParticipants <= 16) {
+        return 'grid-cols-4 landscape:grid-cols-4'; // 縦向き：4×4、横向き：4×4
+    } else {
+        return 'grid-cols-4 landscape:grid-cols-5'; // 縦向き：4×n、横向き：5×n
+    }
+};
     // WebRTC接続管理
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
