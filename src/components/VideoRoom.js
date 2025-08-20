@@ -1209,98 +1209,122 @@ export default function VideoRoom({ roomId, userId }) {
             ))}
         </div>
 
-        {/* コントロールパネル - 固定位置 */}
-        <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-md px-2">
-            <div className="flex justify-center items-center gap-1 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-2xl shadow-xl">
+        {/* コントロールパネル - 文字ラベル付き */}
+        <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-5xl px-2">
+            <div className="flex justify-center items-center gap-1 sm:gap-2 bg-white/95 backdrop-blur-sm px-2 sm:px-3 py-2 sm:py-3 rounded-2xl shadow-xl">
                 {/* カメラボタン */}
-                <button
-                    onClick={toggleCamera}
-                    className={`
-                        w-12 h-12 rounded-full flex items-center justify-center
-                        ${isCameraOn ? 'bg-blue-600' : 'bg-red-600'} 
-                        text-white shadow-lg transition-all duration-200
-                    `}
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={toggleCamera}
+                        className={`
+                            w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center
+                            ${isCameraOn ? 'bg-blue-600' : 'bg-red-600'} 
+                            text-white shadow-lg transition-all duration-200
+                        `}
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-gray-700 mt-1">
+                        {isCameraOn ? 'カメラOFF' : 'カメラON'}
+                    </span>
+                </div>
 
                 {/* マイクボタン */}
-                <button
-                    onClick={toggleAudio}
-                    className={`
-                        w-12 h-12 rounded-full flex items-center justify-center
-                        ${isAudioOn ? 'bg-blue-600' : 'bg-red-600'}
-                        text-white shadow-lg transition-all duration-200
-                    `}
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={toggleAudio}
+                        className={`
+                            w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center
+                            ${isAudioOn ? 'bg-blue-600' : 'bg-red-600'}
+                            text-white shadow-lg transition-all duration-200
+                        `}
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-gray-700 mt-1">
+                        {isAudioOn ? 'マイクOFF' : 'マイクON'}
+                    </span>
+                </div>
 
                 {/* 録音ボタン */}
-                <button
-                    onClick={toggleRecording}
-                    className={`
-                        w-12 h-12 rounded-full flex items-center justify-center
-                        ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
-                        text-white shadow-lg transition-all duration-200
-                        ${!isAudioOn ? 'opacity-50' : ''}
-                    `}
-                    disabled={!isAudioOn}
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={toggleRecording}
+                        className={`
+                            w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center
+                            ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-green-600'} 
+                            text-white shadow-lg transition-all duration-200
+                            ${!isAudioOn ? 'opacity-50' : ''}
+                        `}
+                        disabled={!isAudioOn}
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-gray-700 mt-1">
+                        {isRecording ? '録音中' : '録音開始'}
+                    </span>
+                </div>
 
                 {/* 背景ボタン */}
-                <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className="w-12 h-12 rounded-full bg-gray-600 text-white flex items-center justify-center shadow-lg"
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={() => setShowSettings(!showSettings)}
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-600 text-white flex items-center justify-center shadow-lg"
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-gray-700 mt-1">背景</span>
+                </div>
 
                 {/* 退出ボタン */}
-                <button
-                    onClick={() => {
-                        if (window.confirm('ビデオ通話を終了しますか？')) {
-                            leaveRoom();
-                        }
-                    }}
-                    className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg"
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={() => {
+                            if (window.confirm('ビデオ通話を終了しますか？')) {
+                                leaveRoom();
+                            }
+                        }}
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg"
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-red-600 mt-1">退出</span>
+                </div>
 
                 {/* クイズボタン */}
-                <button
-                    onClick={() => window.open(`/yoriai/quiz/${roomId}?user=${userId}`, '_blank')}
-                    className="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-lg"
-                >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014.846 21H9.154a3.374 3.374 0 00-2.669-1.153l-.548-.547z"
-                        />
-                    </svg>
-                </button>
+                <div className="flex flex-col items-center">
+                    <button
+                        onClick={() => window.open(`/yoriai/quiz/${roomId}?user=${userId}`, '_blank')}
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-lg"
+                    >
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014.846 21H9.154a3.374 3.374 0 00-2.669-1.153l-.548-.547z"
+                            />
+                        </svg>
+                    </button>
+                    <span className="text-xs font-bold text-gray-700 mt-1">クイズ</span>
+                </div>
             </div>
         </div>
 
