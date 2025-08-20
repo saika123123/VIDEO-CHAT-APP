@@ -84,3 +84,43 @@ body {
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
   font-weight: 600;
 }
+
+/* 縦画面・横画面対応 */
+@media (orientation: portrait) {
+  .portrait\:grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .portrait\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portrait\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (orientation: landscape) {
+  .landscape\:grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .landscape\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .landscape\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .landscape\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .landscape\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+/* ビデオエリアの最適化 */
+.video-grid {
+  display: grid;
+  height: calc(100vh - 100px);
+  overflow: hidden;
+}
+
+/* 名前ラベルのグラデーション背景 */
+.name-gradient {
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+}
+
+/* レスポンシブフォント */
+@media (max-width: 640px) {
+  .responsive-text {
+    font-size: 12px;
+  }
+}
+
+@media (min-width: 641px) {
+  .responsive-text {
+    font-size: 14px;
+  }
+}
