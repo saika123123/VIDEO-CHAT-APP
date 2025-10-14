@@ -21,6 +21,13 @@ export function middleware(request) {
         return NextResponse.next();
     }
 
+    // ★ 追加: /?room=/minutes への誤ったリダイレクトを修正
+    const roomQuery = request.nextUrl.searchParams.get('room');
+    if (request.nextUrl.pathname === '/' && roomQuery === '/minutes') {
+        // 正しいパス /yoriai/minutes にリダイレクト
+        return NextResponse.redirect(new URL('/yoriai/minutes', request.url));
+    }
+
     // ルームIDが存在する場合のみユーザーIDをチェック
     if (request.nextUrl.pathname.length > 1) {
         const userId = request.nextUrl.searchParams.get('user');
