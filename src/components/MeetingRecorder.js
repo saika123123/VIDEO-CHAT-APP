@@ -228,6 +228,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         };
 
         recognition.onerror = (event) => {
+            // ★ 修正点2: 'no-speech'エラーは無視する（onendで再起動するため）
+            if (event.error === 'no-speech') {
+                logDebug(`Recognition error (ignored): ${event.error}`);
+                return;
+            }
             console.error('Speech recognition error:', event);
             logDebug(`Recognition error: ${event.error}`);
             
@@ -267,7 +272,13 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setMeetingId(remoteMeetingId);
             meetingIdRef.current = remoteMeetingId;
             setIsRecording(true);
-            isRecordingRef.current = true;
+            
+            
+            // ★ 修正点1: 自身がイニシエーターの場合は、Socketイベントによる再起動をスキップ
+            if (initiatorId === userId) {
+                logDebug('I am the initiator, skipping recognition start via socket event.');
+                return;
+            }
 
             if (isAudioOn) {
                 try {
