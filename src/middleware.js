@@ -6,10 +6,12 @@ export function middleware(request) {
     if (
         request.nextUrl.pathname.startsWith('/api/') ||
         request.nextUrl.pathname.startsWith('/_next/') ||
-        request.nextUrl.pathname.startsWith('/backgrounds/') ||  // 背景画像へのアクセスを許可
+        request.nextUrl.pathname.startsWith('/backgrounds/') ||
         request.nextUrl.pathname === '/' ||
         request.nextUrl.pathname === '/yoriai/board' ||  // 掲示板ページへのアクセスを許可
-        request.nextUrl.pathname === '/board'  // 短縮パスも許可
+        request.nextUrl.pathname === '/board' ||
+        request.nextUrl.pathname === '/yoriai/minutes' || // ★ 追加: 議事録一覧ページ
+        request.nextUrl.pathname.startsWith('/yoriai/minutes/') // ★ 追加: 議事録詳細ページ
     ) {
         return NextResponse.next();
     }
