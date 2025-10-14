@@ -1,4 +1,5 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import MeetingRecorder from './MeetingRecorder';
@@ -1277,17 +1278,14 @@ export default function VideoRoom({ roomId, userId }) {
                             {isRecording ? '録音中' : '録音開始'}
                         </span>
                     </div>
-
+                    
                     <div className="flex flex-col items-center">
                     <button
-                        onClick={() => router.push('/yoriai/minutes')}
+                        // onClick={() => window.location.href = '/yoriai/minutes'} // 修正前
+                        onClick={() => router.push('/yoriai/minutes')} // ★ 5. router.pushを使用
                         className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
                     >
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                            />
-                        </svg>
+                        {/* ... SVGアイコン ... */}
                     </button>
                     <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
                 </div>
