@@ -6,12 +6,27 @@ export default function MinutesListPage() {
     const [meetings, setMeetings] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [currentRoomId, setCurrentRoomId] = useState(null); // ★ currentRoomIdを追加
     const router = useRouter();
 
     useEffect(() => {
+        // ★ URLからroomIdを取得
+        if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const rId = urlParams.get('roomId');
+            setCurrentRoomId(rId);
+        }
+        
         async function fetchMeetings() {
+            if (!currentRoomId) {
+                setIsLoading(false);
+                setError('現在アクセスしているルーム情報がないため、議事録を読み込めません。');
+                return;
+            }
+            
             try {
-                const response = await fetch('/yoriai/api/meetings/all');
+                // ★ ルームIDをクエリパラメータとしてAPIに渡す
+                const response = await fetch(`/yoriai/api/meetings/all?roomId=${currentRoomId}`);
                 const data = await response.json();
 
                 if (response.ok) {
@@ -26,11 +41,15 @@ export default function MinutesListPage() {
                 setIsLoading(false);
             }
         }
-        fetchMeetings();
-    }, []);
+        
+        if (currentRoomId) { // ルームIDが取得できたらフェッチを実行
+            fetchMeetings();
+        }
+    }, [currentRoomId]); // ★ 依存配列にcurrentRoomIdを追加
 
+    // 詳細ページへの遷移時もroomIdを引き継ぐ
     const goToMinutesDetail = (meetingId) => {
-        router.push(`/yoriai/minutes/${meetingId}`);
+        router.push(`/yoriai/minutes/${meetingId}?currentRoomId=${currentRoomId}`);
     };
     
     const goBack = () => {

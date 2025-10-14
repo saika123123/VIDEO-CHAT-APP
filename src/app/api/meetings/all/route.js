@@ -1,13 +1,25 @@
+// src/app/api/meetings/all/route.js
+
 import prisma from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// すべての会議とその議事録の概要を取得
-export async function GET() {
+// 会議とその議事録の概要を、特定のルームIDでフィルタして取得
+export async function GET(request) {
     try {
-        // 終了した会議（isActive: false）かつ議事録が1件以上ある会議のみを取得
+        const { searchParams } = new URL(request.url);
+        const targetRoomId = searchParams.get('roomId'); // ★ ルームIDを取得
+
+        if (!targetRoomId) {
+             // ルームIDがない場合は空の結果を返す（権限がないとみなす）
+            return NextResponse.json({ success: true, meetings: [] });
+        }
+        
+        // 終了した会議（isActive: false）かつ議事録が1件以上あり、
+        // かつ指定されたルームIDに紐づく会議のみを取得
         const meetings = await prisma.meeting.findMany({
             where: {
                 isActive: false,
+                roomId: targetRoomId, // ★ フィルタリング条件を追加
                 speeches: {
                     some: {}
                 }
@@ -23,13 +35,12 @@ export async function GET() {
                         backgroundUrl: true
                     }
                 },
-                // 議事録の数をカウント
                 _count: {
                     select: { speeches: true }
                 }
             },
             orderBy: {
-                endTime: 'desc' // 新しい順に並べる
+                endTime: 'desc'
             }
         });
 

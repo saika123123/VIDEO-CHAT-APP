@@ -1,15 +1,26 @@
 'use client';
+import { useSearchParams } from 'next/navigation'; // ★ useSearchParamsをインポート
 import { useEffect, useState } from 'react';
 
 export default function MinutesClient({ meetingId }) {
     const [data, setData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    
+    const searchParams = useSearchParams(); // ★ searchParamsを取得
+    const currentRoomId = searchParams.get('currentRoomId'); // ★ クエリパラメータから取得
 
     useEffect(() => {
         async function fetchSpeeches() {
+            if (!currentRoomId) {
+                setError('現在のルーム情報がないため、議事録を読み込めません。');
+                setIsLoading(false);
+                return;
+            }
+            
             try {
-                const response = await fetch(`/yoriai/api/meetings/${meetingId}/speeches`);
+                // ★ currentRoomIdをクエリパラメータとしてAPIに渡す
+                const response = await fetch(`/yoriai/api/meetings/${meetingId}/speeches?currentRoomId=${currentRoomId}`);
                 const result = await response.json();
 
                 if (response.ok) {
@@ -28,7 +39,7 @@ export default function MinutesClient({ meetingId }) {
         if (meetingId) {
             fetchSpeeches();
         }
-    }, [meetingId]);
+    }, [meetingId, currentRoomId]); // ★ 依存配列にcurrentRoomIdを追加
 
     if (isLoading) {
         return (

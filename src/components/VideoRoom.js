@@ -586,8 +586,8 @@ export default function VideoRoom({ roomId, userId }) {
     const goToMinutes = () => {
         if (typeof window !== 'undefined') {
             const baseUrl = window.location.origin;
-            // 正しい絶対URLを構築し、強制遷移
-            const fullUrl = `${baseUrl}/yoriai/minutes`;
+            // ★ ルームIDをクエリパラメータとして渡す
+            const fullUrl = `${baseUrl}/yoriai/minutes?roomId=${roomId}`; 
             window.location.href = fullUrl; 
         }
     };
