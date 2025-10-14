@@ -179,6 +179,8 @@ export default function VideoRoom({ roomId, userId }) {
     const meetingRecorderRef = useRef(null);
     const mountedRef = useRef(true);
 
+    const router = useRouter();
+
     // 会話記録の開始/停止を切り替える関数
     const toggleRecording = async () => {
         if (!isAudioOn) {
@@ -1278,7 +1280,7 @@ export default function VideoRoom({ roomId, userId }) {
 
                     <div className="flex flex-col items-center">
                     <button
-                        onClick={() => window.location.href = '/yoriai/minutes'}
+                        onClick={() => router.push('/yoriai/minutes')}
                         className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
                     >
                         <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
