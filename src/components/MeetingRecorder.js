@@ -116,20 +116,16 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
     // キューの処理
     const processSpeechQueue = useCallback(async () => {
-        if (processingRef.current) {
-            logDebug('Already processing queue, skipping');
-            return;
-        }
+        // ★ 修正点1: キューが空か、既に処理中ならすぐに抜ける
+    if (pendingSpeechesRef.current.length === 0 || processingRef.current) {
+        logDebug('Queue is empty or already processing, skipping. Length:', pendingSpeechesRef.current.length);
+        return;
+    }
 
-        if (!meetingIdRef.current) {
-            logDebug('No active meeting ID, cannot process queue');
-            return;
-        }
-
-        if (pendingSpeechesRef.current.length === 0) {
-            logDebug('Queue is empty, nothing to process');
-            return;
-        }
+    if (!meetingIdRef.current) {
+        logDebug('No active meeting ID, cannot process queue');
+        return;
+    }
 
         processingRef.current = true;
         let currentSpeech = null;
@@ -151,8 +147,10 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to save speech: ${response.statusText}`);
-            }
+            // ★ 修正点2: エラーレスポンスの詳細を取得してログ出力
+            const errorText = await response.text();
+            throw new Error(`Failed to save speech: ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
+        }
 
             const data = await response.json();
             logDebug('Speech saved successfully:', data);
@@ -181,17 +179,20 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                     pendingSpeechesRef.current.shift();
                     setError(`Failed to save speech after 3 attempts`);
                 } else {
-                    logDebug(`Retry attempt ${currentSpeech.retryCount} for speech`);
+                    logDebug(`Retry attempt ${currentSpeech.retryCount} for speech. Retrying in 1s.`);
+                // ★ 修正点3: 失敗時に処理フラグを解除し、すぐに再試行せず、setTimeoutで次の処理を待つ
                 }
             }
         } finally {
-            processingRef.current = false;
-            // 連続処理のために残りのキューがあれば処理を続行
-            if (pendingSpeechesRef.current.length > 0) {
-                setTimeout(processSpeechQueue, 1000); // retryDelay
-            }
+        processingRef.current = false;
+        
+        // ★ 修正点4: キューが残っていれば、新しい処理サイクルを開始（setTimeoutを使用し、非同期のブロックを防ぐ）
+        if (pendingSpeechesRef.current.length > 0) {
+             logDebug(`Queue remaining. Starting new cycle in 500ms.`);
+             setTimeout(processSpeechQueue, 500); 
         }
-    }, []);
+    }
+}, []);
 
     // 音声認識の初期化
     const initializeSpeechRecognition = useCallback(() => {
@@ -469,13 +470,18 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 }
             }
 
-            // 残りの音声データを処理
-            let retryCount = 0;
-            while (pendingSpeechesRef.current.length > 0 && retryCount < 5) {
-                await processSpeechQueue();
-                await new Promise(resolve => setTimeout(resolve, 500));
-                retryCount++;
-            }
+            // ★ 修正点5: キューが空になるまで待つ
+        let retryCount = 0;
+        while (pendingSpeechesRef.current.length > 0 && retryCount < 10) { // 10回 (5秒) 待機
+             logDebug(`Waiting for queue to clear. Remaining: ${pendingSpeechesRef.current.length}`);
+             // processSpeechQueueはsetTimeoutで非同期に実行されるため、ここでは待機する
+             if (!processingRef.current) {
+                // processSpeechQueueが停止している場合は手動で再トリガー
+                processSpeechQueue();
+             }
+             await new Promise(resolve => setTimeout(resolve, 500));
+             retryCount++;
+        }
 
             // ミーティングを終了（initiatorのときだけでなく、どのユーザーからでも可能にする）
             if (emitEvent) {
@@ -511,10 +517,14 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             console.error('Error during stop recording:', error);
             setError(`Failed to stop recording: ${error.message}`);
         } finally {
-            setIsSaving(false);
-            processingRef.current = false;
+        setIsSaving(false);
+        // ★ processingRef.current = false; はprocessSpeechQueueのfinallyで管理されるべき
+        // ここでは念の為、キューが残っていた場合はログを出力
+        if (pendingSpeechesRef.current.length > 0) {
+             console.warn('WARNING: Stopping recording finished but speech queue is NOT empty.');
         }
-    };
+    }
+};
 
     // クリーンアップ
     useEffect(() => {
