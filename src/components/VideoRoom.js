@@ -1,5 +1,4 @@
 'use client';
-import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import MeetingRecorder from './MeetingRecorder';
@@ -179,8 +178,6 @@ export default function VideoRoom({ roomId, userId }) {
     const isReconnectingRef = useRef(false);
     const meetingRecorderRef = useRef(null);
     const mountedRef = useRef(true);
-
-    const router = useRouter();
 
     // 会話記録の開始/停止を切り替える関数
     const toggleRecording = async () => {
@@ -582,6 +579,16 @@ export default function VideoRoom({ roomId, userId }) {
                 peer.peerConnection.close();
             }
             delete peersRef.current[targetSocketId];
+        }
+    };
+
+    // 議事録ページへ遷移するヘルパー関数 (絶対パス)
+    const goToMinutes = () => {
+        if (typeof window !== 'undefined') {
+            const baseUrl = window.location.origin;
+            // 正しい絶対URLを構築し、強制遷移
+            const fullUrl = `${baseUrl}/yoriai/minutes`;
+            window.location.href = fullUrl; 
         }
     };
 
@@ -1278,11 +1285,10 @@ export default function VideoRoom({ roomId, userId }) {
                             {isRecording ? '録音中' : '録音開始'}
                         </span>
                     </div>
-                    
+
                     <div className="flex flex-col items-center">
                     <button
-                        // onClick={() => window.location.href = '/yoriai/minutes'} // 修正前
-                        onClick={() => router.push('/yoriai/minutes')} // ★ 5. router.pushを使用
+                        onClick={goToMinutes} // ★ 3. 新しいヘルパー関数を呼び出し
                         className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
                     >
                         <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1293,7 +1299,6 @@ export default function VideoRoom({ roomId, userId }) {
                     </button>
                     <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
                 </div>
-
 
                     {/* 退出ボタン */}
                     <div className="flex flex-col items-center">
