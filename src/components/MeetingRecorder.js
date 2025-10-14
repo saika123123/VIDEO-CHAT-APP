@@ -232,7 +232,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             // ★ 修正点2: 'no-speech'エラーは無視する（onendで再起動するため）
             if (event.error === 'no-speech') {
                 logDebug(`Recognition error (ignored): ${event.error}`);
-                return;
+                return; 
             }
             console.error('Speech recognition error:', event);
             logDebug(`Recognition error: ${event.error}`);
@@ -277,7 +277,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             
             // ★ 修正点1: 自身がイニシエーターの場合は、Socketイベントによる再起動をスキップ
             if (initiatorId === userId) {
-                logDebug('I am the initiator, skipping recognition start via socket event.');
+                logDebug('I am the initiator, skipping recognition start via socket event to avoid double start.');
                 return;
             }
 
@@ -351,7 +351,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         for (let i = event.resultIndex; i < results.length; i++) {
             const result = results[i];
             if (result.isFinal) {
-                const transcript = result[0].transcript.trim();
+                logDebug(`Final result received: ${transcript}`); // 診断用ログ
                 if (transcript) {
                     // 他の参加者に音声データを送信
                     if (socketRef.current) {
@@ -366,9 +366,13 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                     // 自分の音声をキューに追加
                     saveSpeechToQueue(transcript, userId, userName);
                 }
+            } else {
+                // ★ 修正点1: 中間結果をログに出力（診断用）
+                logDebug(`Interim result: ${transcript}`);
             }
         }
-    }, [userId, userName, saveSpeechToQueue]);
+    }, [userId, userName, saveSpeechToQueue, socketRef]);
+
 
     // 録音開始
     const startRecording = async () => {
@@ -418,7 +422,8 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setIsRecording(true);
             isRecordingRef.current = true;
 
-            await recognitionRef.current.start();
+            // ★ 修正点4: recognition.start()のawaitを削除
+            recognitionRef.current.start();
             logDebug('Recognition started successfully');
 
         } catch (error) {
