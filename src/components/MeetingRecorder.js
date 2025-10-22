@@ -1,37 +1,15 @@
 // src/components/MeetingRecorder.js
 
 'use client';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 
-// AudioWorkletプロセッサのコードを文字列として定義
-// ★ 音声データを実際に参照する処理を追加
-const keepAliveProcessor = `
-  class KeepAliveProcessor extends AudioWorkletProcessor {
-    process(inputs, outputs, parameters) {
-      // By accessing the input data, we signal to the browser that the stream is in use.
-      const input = inputs[0];
-      if (input && input.length > 0) {
-        const channelData = input[0];
-        // We don't need to do anything with the data, just access it.
-        if(channelData && channelData.length > 0) {
-           // This line is just to ensure the variable is "used" and not optimized away.
-           const _ = channelData[0];
-        }
-      }
-      return true;
-    }
-  }
-  registerProcessor('keep-alive-processor', KeepAliveProcessor);
-`;
-
-const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users, socketRef }, ref) => {
+const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef }, ref) => {
     // State
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [isInitiator, setIsInitiator] = useState(false); // ★ 修正：setIsInitiatorを定義
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
     // Refs
@@ -40,32 +18,20 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const processingRef = useRef(false);
     const pendingSpeechesRef = useRef([]);
     const isRecordingRef = useRef(false);
-    const localSocketRef = useRef(null);
     const manualStopRef = useRef(false);
-    
-    // Web Audio API Refs
-    const audioContextRef = useRef(null);
-    const mediaStreamSourceRef = useRef(null);
-    const localStreamRef = useRef(null);
-    const audioWorkletNodeRef = useRef(null);
 
     const logDebug = (message, data = null) => {
         const timestamp = new Date().toISOString();
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data || '');
     };
 
-    const resumeAudioContext = useCallback(async () => {
-        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-            logDebug('Resuming AudioContext...');
-            await audioContextRef.current.resume();
-        }
-    }, []);
-
     useImperativeHandle(ref, () => ({
         startRecording: async () => {
-            await resumeAudioContext();
             try {
                 if (!isAudioOn) throw new Error('マイクがミュートされています');
+                if (!localStream || localStream.getAudioTracks().length === 0) {
+                    throw new Error('有効な音声ストリームがありません。');
+                }
                 await startRecording();
                 return true;
             } catch (error) {
@@ -78,53 +44,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         isCurrentlyRecording: () => isRecording
     }));
 
-    const activateMicrophone = useCallback(async () => {
-        try {
-            await resumeAudioContext();
-            
-            if (localStreamRef.current) {
-                deactivateMicrophone();
-            }
-
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-            
-            mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(localStreamRef.current);
-            
-            if (!audioContextRef.current.audioWorklet) {
-                throw new Error("AudioWorklet is not supported in this browser.");
-            }
-            
-            const workletURL = URL.createObjectURL(new Blob([keepAliveProcessor], { type: 'application/javascript' }));
-            await audioContextRef.current.audioWorklet.addModule(workletURL);
-
-            audioWorkletNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'keep-alive-processor');
-            
-            mediaStreamSourceRef.current.connect(audioWorkletNodeRef.current);
-            audioWorkletNodeRef.current.connect(audioContextRef.current.destination);
-
-            logDebug('Microphone activated and connected to AudioWorklet.');
-        } catch (err) {
-            console.error("マイクの起動に失敗:", err);
-            throw new Error(`マイクへのアクセスが許可されていません: ${err.message}`);
-        }
-    }, [resumeAudioContext]);
-
-    const deactivateMicrophone = useCallback(() => {
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
-        if (mediaStreamSourceRef.current) {
-            mediaStreamSourceRef.current.disconnect();
-            mediaStreamSourceRef.current = null;
-        }
-        if(audioWorkletNodeRef.current) {
-            audioWorkletNodeRef.current.disconnect();
-            audioWorkletNodeRef.current = null;
-        }
-        logDebug('Microphone deactivated.');
-    }, []);
-
+    // Queue and processing logic (no changes needed here)
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
         if (!content || !content.trim() || !meetingIdRef.current) return;
         pendingSpeechesRef.current.push({ content: content.trim(), timestamp: new Date().toISOString(), userId: speakerId, userName: speakerName, retryCount: 0 });
@@ -158,13 +78,12 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             if (pendingSpeechesRef.current.length > 0) setTimeout(processSpeechQueue, 500);
         }
     }, []);
-    
+
     const handleSpeechResult = useCallback((event) => {
         if (!isRecordingRef.current) return;
         for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            if (result.isFinal && result[0].transcript.trim()) {
-                const transcript = result[0].transcript.trim();
+            if (event.results[i].isFinal && event.results[i][0].transcript.trim()) {
+                const transcript = event.results[i][0].transcript.trim();
                 logDebug(`Final result: ${transcript}`);
                 if (socketRef.current) {
                     socketRef.current.emit('speech-data', { content: transcript, userId, userName });
@@ -184,7 +103,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         recognition.lang = 'ja-JP';
 
         recognition.onstart = () => logDebug('Speech recognition started');
-        
         recognition.onend = () => {
             logDebug('Speech recognition ended.');
             if (!manualStopRef.current && isRecordingRef.current) {
@@ -194,7 +112,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 }, 100);
             }
         };
-
         recognition.onerror = (event) => {
             logDebug(`Recognition error: ${event.error}`);
             if (event.error === 'no-speech') {
@@ -203,10 +120,9 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 setError('マイクへのアクセスに問題があります。設定を確認してください。');
                 stopRecording(true);
             } else {
-                 setError(`音声認識エラー: ${event.error}`);
+                setError(`音声認識エラー: ${event.error}`);
             }
         };
-
         recognition.onresult = handleSpeechResult;
         recognitionRef.current = recognition;
     }, [handleSpeechResult]);
@@ -217,21 +133,17 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         manualStopRef.current = false;
 
         try {
-            await activateMicrophone();
-
             const response = await fetch('/yoriai/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId })
             });
             if (!response.ok) throw new Error('ミーティングの作成に失敗しました');
-            
             const data = await response.json();
             logDebug('Meeting created:', data);
             
-            setMeetingId(data.meetingId);
             meetingIdRef.current = data.meetingId;
-            setIsInitiator(true);
+            setMeetingId(data.meetingId);
             setRecordingInitiator(userName);
 
             if (socketRef.current) {
@@ -251,7 +163,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setError(error.message);
             setIsRecording(false);
             isRecordingRef.current = false;
-            deactivateMicrophone();
         } finally {
             setIsSaving(false);
         }
@@ -262,15 +173,13 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         if (!isRecordingRef.current && !manualStopRef.current) return;
 
         manualStopRef.current = true;
-        setIsRecording(false);
         isRecordingRef.current = false;
-
+        setIsRecording(false);
+        
         if (recognitionRef.current) {
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
-        
-        deactivateMicrophone();
 
         const currentMeetingId = meetingIdRef.current;
         if (emitEvent && socketRef.current && currentMeetingId) {
@@ -299,45 +208,16 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         logDebug('Meeting ended');
         setMeetingId(null);
         meetingIdRef.current = null;
-        setIsInitiator(false);
         setRecordingInitiator(null);
         setIsSaving(false);
         pendingSpeechesRef.current = [];
     };
     
     useEffect(() => {
-        const initAudio = () => {
-            if (!audioContextRef.current) {
-                try {
-                    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-                } catch (e) {
-                    setError("このブラウザは音声機能に対応していません。");
-                }
-            }
-        };
-        initAudio();
-
-        const handleFirstInteraction = () => resumeAudioContext();
-        window.addEventListener('click', handleFirstInteraction, { once: true });
-        window.addEventListener('keydown', handleFirstInteraction, { once: true });
-
-        return () => {
-            window.removeEventListener('click', handleFirstInteraction);
-            window.removeEventListener('keydown', handleFirstInteraction);
-            if (isRecordingRef.current) {
-                stopRecording(true);
-            }
-            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-                audioContextRef.current.close().catch(e => logDebug('Error closing AudioContext:', e.message));
-            }
-        };
-    }, [resumeAudioContext]);
-    
-    useEffect(() => {
         if (!socketRef.current) return;
         localSocketRef.current = socketRef.current;
 
-        const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
+        const handleRecordingStart = ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
             logDebug(`Received recording start from ${initiatorName}`);
             setRecordingInitiator(initiatorName);
             setMeetingId(remoteMeetingId);
@@ -348,7 +228,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
             if (initiatorId !== userId && isAudioOn) {
                 try {
-                    await activateMicrophone();
                     if (!recognitionRef.current) initializeSpeechRecognition();
                     recognitionRef.current.start();
                 } catch (error) {
@@ -379,18 +258,23 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 localSocketRef.current.off('speech-data');
             }
         };
-    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
+    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId]);
+
+    useEffect(() => {
+        return () => {
+            if (isRecordingRef.current) {
+                stopRecording(true);
+            }
+        };
+    }, []);
 
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-            {/* ヘッダー部分 */}
             <div className="bg-blue-600 p-6">
                 <div className="flex flex-col items-stretch gap-4">
                     <div className="flex justify-between items-center">
                         <h3 className="text-2xl font-bold text-white">会話の記録</h3>
                     </div>
-
-                    {/* 録音状態の表示部分 */}
                     {isRecording ? (
                         <div className="bg-green-50 border-2 border-green-200 text-green-700 rounded-xl p-4">
                             <div className="flex items-center gap-2 text-lg font-bold">
@@ -414,7 +298,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 </div>
             </div>
 
-            {/* エラーメッセージ */}
             {error && (
                 <div className="m-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-lg">
                     <div className="flex items-center gap-2">
@@ -428,7 +311,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 </div>
             )}
 
-            {/* 保存中のインジケーター */}
             {isSaving && (
                 <div className="m-4 p-4 bg-blue-50 border-2 border-blue-200 text-blue-700 rounded-xl">
                     <div className="flex items-center justify-center gap-3">
@@ -438,7 +320,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 </div>
             )}
 
-            {/* 議事録一覧 */}
             <div className="p-4">
                 <div className="font-bold text-xl mb-4 text-gray-700">記録された会話</div>
                 <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
@@ -463,8 +344,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                             </p>
                         </div>
                     ))}
-
-                    {/* 記録がない場合の表示 */}
                     {transcript.length === 0 && (
                         <div className="text-center py-8 bg-gray-50 rounded-xl">
                             <div className="text-gray-400">
