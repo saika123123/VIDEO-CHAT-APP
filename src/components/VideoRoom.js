@@ -184,6 +184,7 @@ export default function VideoRoom({ roomId, userId }) {
     const isReconnectingRef = useRef(false);
     const meetingRecorderRef = useRef(null);
     const mountedRef = useRef(true);
+    const hasInitialized = useRef(false);
 
     // 会話記録の開始/停止を切り替える関数
     const toggleRecording = async () => {
