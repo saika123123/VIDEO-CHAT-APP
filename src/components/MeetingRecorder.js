@@ -200,6 +200,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 body: JSON.stringify({ roomId })
             });
             if (!response.ok) throw new Error('ミーティングの作成に失敗しました');
+            
             const data = await response.json();
             logDebug('Meeting created:', data);
             
