@@ -1,7 +1,18 @@
 // src/components/MeetingRecorder.js
 
 'use client';
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+
+// AudioWorkletプロセッサのコードを文字列として定義
+const keepAliveProcessor = `
+  class KeepAliveProcessor extends AudioWorkletProcessor {
+    process(inputs, outputs, parameters) {
+      // This function being called keeps the microphone active.
+      return true;
+    }
+  }
+  registerProcessor('keep-alive-processor', KeepAliveProcessor);
+`;
 
 const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef }, ref) => {
     // State
@@ -10,6 +21,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isInitiator, setIsInitiator] = useState(false); // ★ 修正：setIsInitiatorを定義
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
     // Refs
@@ -19,14 +31,27 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const pendingSpeechesRef = useRef([]);
     const isRecordingRef = useRef(false);
     const manualStopRef = useRef(false);
+    
+    // Web Audio API Refs
+    const audioContextRef = useRef(null);
+    const mediaStreamSourceRef = useRef(null);
+    const audioWorkletNodeRef = useRef(null);
 
     const logDebug = (message, data = null) => {
         const timestamp = new Date().toISOString();
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data || '');
     };
 
+    const resumeAudioContext = useCallback(async () => {
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+            logDebug('Resuming AudioContext...');
+            await audioContextRef.current.resume();
+        }
+    }, []);
+
     useImperativeHandle(ref, () => ({
         startRecording: async () => {
+            await resumeAudioContext();
             try {
                 if (!isAudioOn) throw new Error('マイクがミュートされています');
                 if (!localStream || localStream.getAudioTracks().length === 0) {
@@ -44,7 +69,40 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         isCurrentlyRecording: () => isRecording
     }));
 
-    // Queue and processing logic (no changes needed here)
+    const activateMicrophone = useCallback(async () => {
+        try {
+            if (!localStream) throw new Error("Local stream is not available.");
+            await resumeAudioContext();
+
+            mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(localStream);
+            
+            const workletURL = URL.createObjectURL(new Blob([keepAliveProcessor], { type: 'application/javascript' }));
+            await audioContextRef.current.audioWorklet.addModule(workletURL);
+
+            audioWorkletNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'keep-alive-processor');
+            
+            mediaStreamSourceRef.current.connect(audioWorkletNodeRef.current);
+            audioWorkletNodeRef.current.connect(audioContextRef.current.destination);
+
+            logDebug('Microphone activated using existing stream.');
+        } catch (err) {
+            console.error("マイクの有効化に失敗:", err);
+            throw new Error(`マイクの処理開始に失敗しました: ${err.message}`);
+        }
+    }, [resumeAudioContext, localStream]);
+
+    const deactivateMicrophone = useCallback(() => {
+        if (mediaStreamSourceRef.current) {
+            mediaStreamSourceRef.current.disconnect();
+            mediaStreamSourceRef.current = null;
+        }
+        if(audioWorkletNodeRef.current) {
+            audioWorkletNodeRef.current.disconnect();
+            audioWorkletNodeRef.current = null;
+        }
+        logDebug('Audio processing for recorder deactivated.');
+    }, []);
+    
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
         if (!content || !content.trim() || !meetingIdRef.current) return;
         pendingSpeechesRef.current.push({ content: content.trim(), timestamp: new Date().toISOString(), userId: speakerId, userName: speakerName, retryCount: 0 });
@@ -78,7 +136,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             if (pendingSpeechesRef.current.length > 0) setTimeout(processSpeechQueue, 500);
         }
     }, []);
-
+    
     const handleSpeechResult = useCallback((event) => {
         if (!isRecordingRef.current) return;
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -103,6 +161,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         recognition.lang = 'ja-JP';
 
         recognition.onstart = () => logDebug('Speech recognition started');
+        
         recognition.onend = () => {
             logDebug('Speech recognition ended.');
             if (!manualStopRef.current && isRecordingRef.current) {
@@ -120,7 +179,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 setError('マイクへのアクセスに問題があります。設定を確認してください。');
                 stopRecording(true);
             } else {
-                setError(`音声認識エラー: ${event.error}`);
+                 setError(`音声認識エラー: ${event.error}`);
             }
         };
         recognition.onresult = handleSpeechResult;
@@ -133,6 +192,8 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         manualStopRef.current = false;
 
         try {
+            await activateMicrophone();
+
             const response = await fetch('/yoriai/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -144,6 +205,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             
             meetingIdRef.current = data.meetingId;
             setMeetingId(data.meetingId);
+            setIsInitiator(true);
             setRecordingInitiator(userName);
 
             if (socketRef.current) {
@@ -163,6 +225,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             setError(error.message);
             setIsRecording(false);
             isRecordingRef.current = false;
+            deactivateMicrophone();
         } finally {
             setIsSaving(false);
         }
@@ -180,6 +243,8 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
+        
+        deactivateMicrophone();
 
         const currentMeetingId = meetingIdRef.current;
         if (emitEvent && socketRef.current && currentMeetingId) {
@@ -208,16 +273,44 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         logDebug('Meeting ended');
         setMeetingId(null);
         meetingIdRef.current = null;
+        setIsInitiator(false);
         setRecordingInitiator(null);
         setIsSaving(false);
         pendingSpeechesRef.current = [];
     };
     
     useEffect(() => {
-        if (!socketRef.current) return;
-        localSocketRef.current = socketRef.current;
+        const initAudio = () => {
+            if (!audioContextRef.current) {
+                try {
+                    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    setError("このブラウザは音声機能に対応していません。");
+                }
+            }
+        };
+        initAudio();
 
-        const handleRecordingStart = ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
+        const handleFirstInteraction = () => resumeAudioContext();
+        window.addEventListener('click', handleFirstInteraction, { once: true });
+        window.addEventListener('keydown', handleFirstInteraction, { once: true });
+
+        return () => {
+            window.removeEventListener('click', handleFirstInteraction);
+            window.removeEventListener('keydown', handleFirstInteraction);
+            if (isRecordingRef.current) {
+                stopRecording(true);
+            }
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close().catch(e => logDebug('Error closing AudioContext:', e.message));
+            }
+        };
+    }, [resumeAudioContext]);
+    
+    useEffect(() => {
+        if (!socketRef.current) return;
+
+        const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
             logDebug(`Received recording start from ${initiatorName}`);
             setRecordingInitiator(initiatorName);
             setMeetingId(remoteMeetingId);
@@ -228,6 +321,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
 
             if (initiatorId !== userId && isAudioOn) {
                 try {
+                    await activateMicrophone();
                     if (!recognitionRef.current) initializeSpeechRecognition();
                     recognitionRef.current.start();
                 } catch (error) {
@@ -247,26 +341,18 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             }
         };
 
-        localSocketRef.current.on('recording-started', handleRecordingStart);
-        localSocketRef.current.on('recording-stopped', handleRecordingStop);
-        localSocketRef.current.on('speech-data', handleRemoteSpeech);
+        socketRef.current.on('recording-started', handleRecordingStart);
+        socketRef.current.on('recording-stopped', handleRecordingStop);
+        socketRef.current.on('speech-data', handleRemoteSpeech);
 
         return () => {
-            if (localSocketRef.current) {
-                localSocketRef.current.off('recording-started');
-                localSocketRef.current.off('recording-stopped');
-                localSocketRef.current.off('speech-data');
+            if (socketRef.current) {
+                socketRef.current.off('recording-started');
+                socketRef.current.off('recording-stopped');
+                socketRef.current.off('speech-data');
             }
         };
-    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId]);
-
-    useEffect(() => {
-        return () => {
-            if (isRecordingRef.current) {
-                stopRecording(true);
-            }
-        };
-    }, []);
+    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
 
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
