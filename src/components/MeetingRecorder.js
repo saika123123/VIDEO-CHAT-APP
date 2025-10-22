@@ -7,7 +7,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 const keepAliveProcessor = `
   class KeepAliveProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
-      // 音声データを処理し続けることで、マイクをアクティブに保つ
+      // This function being called keeps the microphone active.
       return true;
     }
   }
@@ -15,16 +15,15 @@ const keepAliveProcessor = `
 `;
 
 const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users, socketRef }, ref) => {
-    // State管理
+    // State
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [isInitiator, setIsInitiator] = useState(false);
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
-    // Ref管理
+    // Refs
     const recognitionRef = useRef(null);
     const meetingIdRef = useRef(null);
     const processingRef = useRef(false);
@@ -32,41 +31,28 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const isRecordingRef = useRef(false);
     const localSocketRef = useRef(null);
     const manualStopRef = useRef(false);
-
-    // Web Audio API関連のRef
+    
+    // Web Audio API Refs
     const audioContextRef = useRef(null);
     const mediaStreamSourceRef = useRef(null);
     const localStreamRef = useRef(null);
     const audioWorkletNodeRef = useRef(null);
 
-
-    // デバッグログ
     const logDebug = (message, data = null) => {
         const timestamp = new Date().toISOString();
-        console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data ? data : '');
+        console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data || '');
     };
-    
-    // AudioContextをユーザー操作時に再開する
+
     const resumeAudioContext = useCallback(async () => {
-        if (!audioContextRef.current) {
-            try {
-                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            } catch (e) {
-                console.error("AudioContextの作成に失敗しました:", e);
-                setError("音声機能の初期化に失敗しました。");
-                return;
-            }
-        }
-        if (audioContextRef.current.state === 'suspended') {
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
             logDebug('Resuming AudioContext...');
             await audioContextRef.current.resume();
         }
     }, []);
 
-    // 親コンポーネントに公開するメソッド
     useImperativeHandle(ref, () => ({
         startRecording: async () => {
-            await resumeAudioContext(); // ユーザー操作の起点でAudioContextを有効化
+            await resumeAudioContext();
             try {
                 if (!isAudioOn) throw new Error('マイクがミュートされています');
                 await startRecording();
@@ -77,32 +63,27 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 return false;
             }
         },
-        stopRecording: async () => {
-            try {
-                await stopRecording(true);
-                return true;
-            } catch (error) {
-                console.error('録音停止エラー:', error);
-                return false;
-            }
-        },
+        stopRecording: () => stopRecording(true),
         isCurrentlyRecording: () => isRecording
     }));
 
-    // ★ 音声ストリームを起動し、マイクをアクティブに保つ (AudioWorklet版)
     const activateMicrophone = useCallback(async () => {
         try {
-            await resumeAudioContext();
-            
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(track => track.stop());
+            if (!audioContextRef.current) {
+                 throw new Error("AudioContextが初期化されていません。");
             }
+            await resumeAudioContext();
+
+            if (localStreamRef.current) deactivateMicrophone();
 
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
             
             mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(localStreamRef.current);
             
-            // AudioWorkletの準備
+            if (!audioContextRef.current.audioWorklet) {
+                throw new Error("AudioWorklet is not supported in this browser.");
+            }
+            
             const workletURL = URL.createObjectURL(new Blob([keepAliveProcessor], { type: 'application/javascript' }));
             await audioContextRef.current.audioWorklet.addModule(workletURL);
 
@@ -118,7 +99,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         }
     }, [resumeAudioContext]);
 
-    // ★ マイクの無効化 (AudioWorklet版)
     const deactivateMicrophone = useCallback(() => {
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -135,8 +115,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         logDebug('Microphone deactivated.');
     }, []);
 
-
-    // キュー関連
+    // ... (saveSpeechToQueue, processSpeechQueue, handleSpeechResult remain the same)
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
         if (!content || !content.trim() || !meetingIdRef.current) return;
         pendingSpeechesRef.current.push({ content: content.trim(), timestamp: new Date().toISOString(), userId: speakerId, userName: speakerName, retryCount: 0 });
@@ -186,6 +165,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         }
     }, [userId, userName, saveSpeechToQueue, socketRef]);
 
+
     const initializeSpeechRecognition = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) throw new Error('このブラウザは音声認識に対応していません。');
@@ -202,11 +182,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             if (!manualStopRef.current && isRecordingRef.current) {
                 logDebug('Restarting recognition...');
                 setTimeout(() => {
-                    try {
-                        if (recognitionRef.current) recognitionRef.current.start();
-                    } catch(e) {
-                        logDebug('Error restarting recognition:', e.message);
-                    }
+                    if (recognitionRef.current) recognitionRef.current.start();
                 }, 100);
             }
         };
@@ -214,7 +190,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         recognition.onerror = (event) => {
             logDebug(`Recognition error: ${event.error}`);
             if (event.error === 'no-speech') {
-                logDebug('"no-speech" error occurred. Will restart via onend.');
+                logDebug('"no-speech" error. Will restart via onend.');
             } else if (event.error === 'audio-capture' || event.error === 'not-allowed') {
                 setError('マイクへのアクセスに問題があります。設定を確認してください。');
                 stopRecording(true);
@@ -261,7 +237,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setIsRecording(true);
             isRecordingRef.current = true;
             recognitionRef.current.start();
-            logDebug('Recognition started successfully');
 
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -295,7 +270,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         }
         
         setIsSaving(true);
-        // キューが空になるのを待つ
         let retryCount = 0;
         while (pendingSpeechesRef.current.length > 0 && retryCount < 20) {
              await new Promise(resolve => setTimeout(resolve, 500));
@@ -320,10 +294,39 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         setIsInitiator(false);
         setRecordingInitiator(null);
         setIsSaving(false);
-        if (pendingSpeechesRef.current.length > 0) {
-             pendingSpeechesRef.current = [];
-        }
+        pendingSpeechesRef.current = [];
     };
+
+    // ★ 初期化 Effect
+    useEffect(() => {
+        const initAudio = async () => {
+            if (!audioContextRef.current) {
+                try {
+                    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    setError("このブラウザは音声機能に対応していません。");
+                }
+            }
+        };
+        initAudio();
+
+        const handleFirstInteraction = () => {
+            resumeAudioContext();
+        };
+        window.addEventListener('click', handleFirstInteraction, { once: true });
+        window.addEventListener('keydown', handleFirstInteraction, { once: true });
+
+        return () => {
+            window.removeEventListener('click', handleFirstInteraction);
+            window.removeEventListener('keydown', handleFirstInteraction);
+            if (isRecordingRef.current) {
+                stopRecording(true);
+            }
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close().catch(e => logDebug('Error closing AudioContext:', e.message));
+            }
+        };
+    }, [resumeAudioContext]);
     
     useEffect(() => {
         if (!socketRef.current) return;
@@ -372,17 +375,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             }
         };
     }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
-
-    useEffect(() => {
-        return () => {
-            if (isRecordingRef.current) {
-                stopRecording(true);
-            }
-            if (audioContextRef.current) {
-                audioContextRef.current.close().catch(e => logDebug('Error closing AudioContext:', e.message));
-            }
-        };
-    }, []);
 
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
