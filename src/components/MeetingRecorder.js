@@ -18,10 +18,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const meetingIdRef = useRef(null);
     const processingRef = useRef(false);
     const pendingSpeechesRef = useRef([]);
+    const isInitializedRef = useRef(false);
     const isRecordingRef = useRef(false);
     const localSocketRef = useRef(null);
     const audioContextRef = useRef(null);
-    const localAudioStreamRef = useRef(null); // 音声認識専用のストリーム
+    const hasAudioAccessRef = useRef(false);
 
     // デバッグログ
     const logDebug = (message, data = null) => {
@@ -36,6 +37,10 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                 if (!isAudioOn) {
                     throw new Error('マイクがミュートされています');
                 }
+
+                // 録音前に音声へのアクセス許可を確認
+                await checkAudioAccess();
+                
                 await startRecording();
                 return true;
             } catch (error) {
@@ -55,29 +60,47 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         },
         isCurrentlyRecording: () => isRecording
     }));
-    
-    // ★★★ 修正箇所 ★★★
-    // 録音専用の音声ストリームを取得・管理する関数
-    const getDedicatedAudioStream = async () => {
-        if (localAudioStreamRef.current) {
-            return localAudioStreamRef.current;
-        }
+
+    // 音声デバイスへのアクセス確認
+    const checkAudioAccess = async () => {
+        if (hasAudioAccessRef.current) return true;
+        
         try {
-            logDebug('Requesting dedicated audio stream for speech recognition...');
+            logDebug('Checking audio access...');
+            
+            // AudioContextをチェック/作成
+            if (!audioContextRef.current) {
+                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // マイクへのアクセス許可を確認
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            localAudioStreamRef.current = stream;
-            logDebug('Dedicated audio stream obtained.');
-            return stream;
-        } catch (err) {
-            console.error('Failed to get dedicated audio stream:', err);
-            throw new Error('マイクへのアクセスが許可されていません。');
+            
+            // テストのためにトラックを停止
+            stream.getTracks().forEach(track => track.stop());
+            
+            hasAudioAccessRef.current = true;
+            logDebug('Audio access granted');
+            return true;
+        } catch (error) {
+            logDebug('Audio access denied:', error.message);
+            throw new Error(`マイクへのアクセスが許可されていません: ${error.message}`);
         }
     };
 
-    // キューに音声を追加
+    // キューに音声を追加（送信者の情報を含める）
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
-        if (!content || !content.trim() || !meetingIdRef.current) return;
+        if (!content || !content.trim()) {
+            logDebug('Empty content, skipping');
+            return;
+        }
 
+        if (!meetingIdRef.current) {
+            logDebug('No active meeting ID, skipping');
+            return;
+        }
+
+        // 音声データを保存キューに追加
         const speechData = {
             content: content.trim(),
             timestamp: new Date().toISOString(),
@@ -85,21 +108,38 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             userName: speakerName,
             retryCount: 0
         };
+
+        logDebug('Adding speech to queue:', speechData);
         pendingSpeechesRef.current.push(speechData);
+        
+        // 保存処理を非同期で実行
         processSpeechQueue();
     }, []);
 
     // キューの処理
     const processSpeechQueue = useCallback(async () => {
-        if (pendingSpeechesRef.current.length === 0 || processingRef.current || !meetingIdRef.current) return;
+        if (pendingSpeechesRef.current.length === 0 || processingRef.current) {
+            logDebug('Queue is empty or already processing, skipping. Length:', pendingSpeechesRef.current.length);
+            return;
+        }
+
+        if (!meetingIdRef.current) {
+            logDebug('No active meeting ID, cannot process queue');
+            return;
+        }
 
         processingRef.current = true;
-        const currentSpeech = pendingSpeechesRef.current[0];
+        let currentSpeech = null;
 
         try {
+            currentSpeech = pendingSpeechesRef.current[0];
+            logDebug('Processing speech:', currentSpeech);
+
             const response = await fetch('/yoriai/api/speeches', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({
                     meetingId: meetingIdRef.current,
                     userId: currentSpeech.userId,
@@ -109,142 +149,253 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`API error: ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
+                throw new Error(`Failed to save speech: ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
             }
 
             const data = await response.json();
-            setTranscript(prev => [...prev, { ...currentSpeech, id: data.id }]);
+            logDebug('Speech saved successfully:', data);
+
+            // 既存のトランスクリプトに追加する際、送信者の情報を含める
+            setTranscript(prev => [
+                ...prev,
+                {
+                    id: data.id,
+                    userId: currentSpeech.userId,
+                    userName: currentSpeech.userName,
+                    content: currentSpeech.content,
+                    timestamp: currentSpeech.timestamp
+                }
+            ]);
+
             pendingSpeechesRef.current.shift();
             setError(null);
+
         } catch (error) {
-            console.error('Failed to save speech:', error);
-            currentSpeech.retryCount++;
-            if (currentSpeech.retryCount >= 3) {
-                pendingSpeechesRef.current.shift();
-                setError(`音声の保存に失敗しました: ${error.message.substring(0, 50)}...`);
+            console.error('Failed to save speech (API/Network Error):', error);
+            if (currentSpeech) {
+                currentSpeech.retryCount = (currentSpeech.retryCount || 0) + 1;
+                if (currentSpeech.retryCount >= 3) { // maxRetries
+                    logDebug(`Max retries reached for speech, discarding:`, currentSpeech);
+                    pendingSpeechesRef.current.shift();
+                    setError(`Failed to save speech after 3 attempts. API Error: ${error.message.substring(0, 50)}...`);
+                } else {
+                    logDebug(`Retry attempt ${currentSpeech.retryCount} for speech. Retrying in 500ms.`);
+                }
             }
         } finally {
             processingRef.current = false;
+            
+            // キューが残っていれば、新しい処理サイクルを開始（setTimeoutを使用し、非同期のブロックを防ぐ）
             if (pendingSpeechesRef.current.length > 0) {
-                setTimeout(processSpeechQueue, 500);
+                 logDebug(`Queue remaining. Starting new cycle in 500ms.`);
+                 setTimeout(processSpeechQueue, 500); 
             }
         }
     }, []);
 
     // 音声認識の結果を処理
     const handleSpeechResult = useCallback((event) => {
-        if (!isRecordingRef.current) return;
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-                const transcript = event.results[i][0].transcript.trim();
+        if (!isRecordingRef.current || !meetingIdRef.current) {
+            return;
+        }
+
+        const results = event.results;
+        for (let i = event.resultIndex; i < results.length; i++) {
+            const result = results[i];
+            const transcript = result[0].transcript.trim();
+
+            if (result.isFinal) {
+                logDebug(`Final result received: ${transcript}`); 
                 if (transcript) {
-                    logDebug(`Final result received: ${transcript}`);
+                    // 他の参加者に音声データを送信
                     if (socketRef.current) {
-                        socketRef.current.emit('speech-data', { content: transcript, userId, userName });
+                        logDebug(`Emitting speech data: ${transcript}`);
+                        socketRef.current.emit('speech-data', {
+                            content: transcript,
+                            userId,
+                            userName
+                        });
                     }
+
+                    // 自分の音声をキューに追加
                     saveSpeechToQueue(transcript, userId, userName);
                 }
+            } else {
+                // 中間結果をログに出力（診断用）
+                logDebug(`Interim result: ${transcript}`);
             }
         }
     }, [userId, userName, saveSpeechToQueue, socketRef]);
 
     // 音声認識の初期化
-    const initializeSpeechRecognition = useCallback(async () => {
-        if (!('webkitSpeechRecognition' in window)) {
+    const initializeSpeechRecognition = useCallback(() => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
             throw new Error('このブラウザは音声認識をサポートしていません');
         }
 
-        // ★★★ 修正箇所 ★★★
-        // ここでマイクへのアクセスを直接行い、音声認識専用のストリームを確保
-        await getDedicatedAudioStream();
-
-        const recognition = new window.webkitSpeechRecognition();
+        const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'ja-JP';
 
-        recognition.onstart = () => logDebug('Speech recognition started');
+        recognition.onstart = () => {
+            logDebug('Speech recognition started');
+            setError(null);
+        };
+
         recognition.onend = () => {
             logDebug('Speech recognition ended');
-            if (isRecordingRef.current) {
-                setTimeout(() => {
-                    if (isRecordingRef.current) {
-                        try {
-                            recognition.start();
-                            logDebug('Recognition restarted.');
-                        } catch (err) {
-                            logDebug('Error restarting recognition (already started?):', err.message);
+            recognition.manualStop = false; 
+            if (isRecordingRef.current && meetingIdRef.current) {
+                try {
+                    setTimeout(() => {
+                        if (isRecordingRef.current && meetingIdRef.current) {
+                            try {
+                                // recognition.start()のtry/catchは認識が安定するまで維持
+                                recognition.start(); 
+                                logDebug('Recognition restarted after delay');
+                            } catch (err) {
+                                logDebug('Error during recognition.start() restart:', err.message);
+                            }
                         }
-                    }
-                }, 250); // 再起動の間隔を短縮
+                    }, 500);
+                } catch (error) {
+                    console.error('Failed to restart recognition:', error);
+                    setError('Failed to restart speech recognition');
+                }
             }
         };
 
         recognition.onerror = (event) => {
+            // 'no-speech'エラー（発言なし）の処理
             if (event.error === 'no-speech') {
-                logDebug('Recognition error (ignored): no-speech.');
-                return;
+                logDebug(`Recognition error (ignored): ${event.error}. Please check mic.`);
+                
+                // ユーザーにマイクのチェックを促すメッセージを一時的に表示
+                setError('マイクが音声を拾えていないようです。ブラウザのマイク許可と音量をご確認ください。');
+                setTimeout(() => setError(null), 5000); 
+                
+                return; 
             }
+            
             console.error('Speech recognition error:', event);
-            setError(`音声認識エラー: ${event.error}`);
-            // エラーによっては録音を停止するロジックを追加することも検討
+            logDebug(`Recognition error: ${event.error}`);
+            
+            // 特定のエラータイプに対する処理
+            if (event.error === 'audio-capture') {
+                setError('マイクへのアクセスができません。設定を確認してください。');
+                if (isRecordingRef.current) {
+                    isRecordingRef.current = false;
+                    setIsRecording(false);
+                }
+            } else if (event.error === 'not-allowed') {
+                setError('マイクの使用が許可されていません。');
+                isRecordingRef.current = false;
+                setIsRecording(false);
+            } else {
+                setError(`音声認識エラー: ${event.error}`);
+            }
         };
 
         recognition.onresult = handleSpeechResult;
         return recognition;
-    }, [handleSpeechResult]);
+    }, [handleSpeechResult]); 
 
-    // Socket.IOイベントハンドラ
+    // Socket.IOイベントハンドラの設定
     useEffect(() => {
         if (!socketRef.current) return;
 
+        localSocketRef.current = socketRef.current;
+
+        // 録音開始イベントのハンドラ
         const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
-            logDebug(`Received recording start from ${initiatorName}`);
-            setRecordingInitiator(initiatorName);
+            logDebug(`Received recording start from ${initiatorName || initiatorId}`);
+
+            setRecordingInitiator(initiatorName || initiatorId);
             setMeetingId(remoteMeetingId);
             meetingIdRef.current = remoteMeetingId;
             setIsRecording(true);
             isRecordingRef.current = true;
 
-            if (initiatorId === userId) return;
-
+            // 自身がイニシエーターの場合は、Socketイベントによる認識開始をスキップ（二重起動回避）
+            if (initiatorId === userId) {
+                logDebug('I am the initiator, skipping recognition start via socket event to avoid double start.');
+                return; 
+            }
+            
             if (isAudioOn) {
                 try {
+                    await checkAudioAccess(); 
+                    
                     if (!recognitionRef.current) {
-                        recognitionRef.current = await initializeSpeechRecognition();
+                        recognitionRef.current = initializeSpeechRecognition();
                     }
-                    recognitionRef.current.start();
+                    
+                    // recognition.start()をtry...catchでラップ
+                    try {
+                        recognitionRef.current.start();
+                        logDebug('Recognition started after receiving recording-start event');
+                    } catch (err) {
+                        logDebug('Failed to call recognition.start() from remote event (likely already running):', err.message);
+                    }
+                    
                 } catch (error) {
                     console.error('Error starting remote recording:', error);
-                    setError(`録音の開始に失敗: ${error.message}`);
+                    setError(`録音の開始に失敗しました: ${error.message}`);
                 }
             }
         };
 
-        const handleRecordingStop = async ({ meetingId: remoteMeetingId }) => {
-            if (meetingIdRef.current === remoteMeetingId) {
-                await stopRecording(false);
+        // 録音停止イベントのハンドラ
+        const handleRecordingStop = async ({ meetingId: remoteMeetingId, initiatorId }) => {
+            logDebug(`Received recording stop from ${initiatorId} for meeting ${remoteMeetingId}`);
+            
+            if (meetingIdRef.current && meetingIdRef.current === remoteMeetingId) {
+                await stopRecording(false); // false means don't emit stop event
+            } else {
+                logDebug('Received stop event for different meeting, ignoring');
             }
         };
 
+        // 他の参加者からの音声データを受信
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
-            if (isRecordingRef.current) {
-                logDebug(`Received remote speech from ${speakerName}: ${content}`);
-                saveSpeechToQueue(content, speakerId, speakerName);
+            logDebug(`Received remote speech from ${speakerName}: ${content}`);
+            
+            if (!isRecordingRef.current || !meetingIdRef.current) {
+                logDebug('Recording not active, ignoring remote speech');
+                return;
             }
+            
+            // ここが重要: リモート音声を保存キューに追加
+            saveSpeechToQueue(content, speakerId, speakerName);
+            
+            // 自分のUIに中間結果が表示されないため、リモートから来た確定結果はUIに追加
+            setTranscript(prev => [
+                ...prev,
+                {
+                    id: Date.now().toString(), // リモート結果にはDB IDがないため、一時ID
+                    userId: speakerId,
+                    userName: speakerName,
+                    content: content,
+                    timestamp: new Date().toISOString()
+                }
+            ]);
         };
 
-        socketRef.current.on('recording-started', handleRecordingStart);
-        socketRef.current.on('recording-stopped', handleRecordingStop);
-        socketRef.current.on('speech-data', handleRemoteSpeech);
+        // イベントリスナーの登録
+        localSocketRef.current.on('recording-started', handleRecordingStart);
+        localSocketRef.current.on('recording-stopped', handleRecordingStop);
+        localSocketRef.current.on('speech-data', handleRemoteSpeech);
 
         return () => {
-            socketRef.current.off('recording-started', handleRecordingStart);
-            socketRef.current.off('recording-stopped', handleRecordingStop);
-            socketRef.current.off('speech-data', handleRemoteSpeech);
+            if (localSocketRef.current) {
+                localSocketRef.current.off('recording-started', handleRecordingStart);
+                localSocketRef.current.off('recording-stopped', handleRecordingStop);
+                localSocketRef.current.off('speech-data', handleRemoteSpeech);
+            }
         };
-    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, stopRecording]);
-
+    }, [socketRef?.current, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, checkAudioAccess, userName]);
 
     // 録音開始
     const startRecording = async () => {
@@ -252,21 +403,31 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setIsSaving(true);
             logDebug('Starting new recording session');
 
+            if (!isAudioOn) {
+                throw new Error('マイクがミュートされています');
+            }
+
+            // ミーティングの作成
             const response = await fetch('/yoriai/api/meetings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId })
             });
-            if (!response.ok) throw new Error('Failed to create meeting');
-            
+
+            if (!response.ok) {
+                throw new Error('Failed to create meeting');
+            }
+
             const data = await response.json();
             logDebug('Meeting created:', data);
 
+            // 状態の更新
             setMeetingId(data.meetingId);
             meetingIdRef.current = data.meetingId;
             setIsInitiator(true);
             setRecordingInitiator(userName);
 
+            // Socket.IOで録音開始を通知
             if (socketRef.current) {
                 socketRef.current.emit('recording-start', {
                     meetingId: data.meetingId,
@@ -275,99 +436,155 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
                     roomId: roomId
                 });
             }
-            
+
+            // 音声認識の初期化と開始
             if (!recognitionRef.current) {
-                recognitionRef.current = await initializeSpeechRecognition();
+                recognitionRef.current = initializeSpeechRecognition();
             }
 
             setIsRecording(true);
             isRecordingRef.current = true;
-            recognitionRef.current.start();
-            logDebug('Recognition started successfully');
+
+            // recognition.start()をtry...catchでラップし、競合エラーをログに残す
+            try {
+                recognitionRef.current.start();
+                logDebug('Recognition started successfully');
+            } catch (err) {
+                 logDebug('Failed to call recognition.start() locally (likely started by remote event):', err.message);
+                 // InvalidStateErrorの場合は無視して続行
+                 if (err.name !== 'InvalidStateError') {
+                     throw err; 
+                 }
+            }
+
 
         } catch (error) {
             console.error('Failed to start recording:', error);
             setError(error.message);
             setIsRecording(false);
             isRecordingRef.current = false;
+            setMeetingId(null);
+            meetingIdRef.current = null;
         } finally {
             setIsSaving(false);
         }
     };
 
     // 録音停止
-    const stopRecording = useCallback(async (emitEvent = true) => {
+    const stopRecording = async (emitEvent = true) => {
         logDebug('Stopping recording');
-        if (!meetingIdRef.current) return;
+
+        if (!meetingIdRef.current) {
+            logDebug('No active meeting, cannot stop');
+            return;
+        }
 
         const currentMeetingId = meetingIdRef.current;
-        isRecordingRef.current = false;
-        setIsRecording(false);
 
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-            recognitionRef.current = null;
-        }
-        
-        // ★★★ 修正箇所 ★★★
-        // 録音専用ストリームを停止
-        if (localAudioStreamRef.current) {
-            localAudioStreamRef.current.getTracks().forEach(track => track.stop());
-            localAudioStreamRef.current = null;
-            logDebug('Dedicated audio stream stopped.');
-        }
+        try {
+            setIsSaving(true);
 
-        if (emitEvent && socketRef.current) {
-            socketRef.current.emit('recording-stop', {
-                meetingId: currentMeetingId,
-                initiatorId: userId,
-                roomId: roomId
-            });
-        }
-        
-        setIsSaving(true);
-        // キューが空になるのを待つ
-        let retryCount = 0;
-        while (pendingSpeechesRef.current.length > 0 && retryCount < 10) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            retryCount++;
-        }
-        
-        if (emitEvent) {
-            try {
-                await fetch(`/yoriai/api/meetings/${currentMeetingId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ endTime: new Date().toISOString() })
+            // 状態のリセットを先に行う
+            setIsRecording(false);
+            isRecordingRef.current = false;
+
+            // Socket.IOで録音停止を通知（どのユーザーからでも停止できるようにする）
+            if (emitEvent && socketRef.current) {
+                socketRef.current.emit('recording-stop', {
+                    meetingId: currentMeetingId,
+                    initiatorId: userId,
+                    roomId: roomId
                 });
-            } catch (apiError) {
-                console.error('API error ending meeting:', apiError);
+            }
+
+            if (recognitionRef.current) {
+                recognitionRef.current.manualStop = true;
+                try {
+                    recognitionRef.current.stop();
+                    logDebug('Recognition stopped');
+                } catch (err) {
+                    logDebug('Error stopping recognition:', err.message);
+                }
+            }
+
+            // 残りの音声データを処理
+            let retryCount = 0;
+            while (pendingSpeechesRef.current.length > 0 && retryCount < 10) {
+                 logDebug(`Waiting for queue to clear. Remaining: ${pendingSpeechesRef.current.length}`);
+                 // processSpeechQueueが停止している場合は手動で再トリガー
+                 if (!processingRef.current) {
+                    processSpeechQueue();
+                 }
+                 await new Promise(resolve => setTimeout(resolve, 500));
+                 retryCount++;
+            }
+
+            // ミーティングを終了（initiatorのときだけでなく、どのユーザーからでも可能にする）
+            if (emitEvent) {
+                try {
+                    const response = await fetch(`/yoriai/api/meetings/${currentMeetingId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            endTime: new Date().toISOString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`Failed to end meeting: ${errorData.error || response.statusText}`);
+                    }
+                } catch (apiError) {
+                    console.error('API error ending meeting:', apiError);
+                    // APIエラーでも処理は継続
+                }
+            }
+
+            logDebug('Meeting ended successfully');
+
+            // 状態のリセット
+            setMeetingId(null);
+            meetingIdRef.current = null;
+            recognitionRef.current = null;
+            setIsInitiator(false);
+            setRecordingInitiator(null);
+
+        } catch (error) {
+            console.error('Error during stop recording:', error);
+            setError(`Failed to stop recording: ${error.message}`);
+        } finally {
+            setIsSaving(false);
+            // 警告: キューが残っていた場合はログを出力
+            if (pendingSpeechesRef.current.length > 0) {
+                 console.warn(`WARNING: Stopping recording finished but speech queue (${pendingSpeechesRef.current.length} items) is NOT empty. Some data may be lost.`);
+                 pendingSpeechesRef.current = []; // データロストを許容してキューをクリア
             }
         }
-        
-        logDebug('Meeting ended.');
-        setMeetingId(null);
-        meetingIdRef.current = null;
-        setIsInitiator(false);
-        setRecordingInitiator(null);
-        setIsSaving(false);
-    }, [roomId, userId]);
+    };
 
     // クリーンアップ
     useEffect(() => {
         return () => {
-            isRecordingRef.current = false;
             if (recognitionRef.current) {
-                recognitionRef.current.stop();
+                try {
+                    recognitionRef.current.stop();
+                } catch (err) {
+                    // 既に停止しているか、エラーが発生した場合は無視
+                }
+                recognitionRef.current = null;
             }
-            if (localAudioStreamRef.current) {
-                localAudioStreamRef.current.getTracks().forEach(track => track.stop());
-            }
+            setIsRecording(false);
+            isRecordingRef.current = false;
             if (meetingIdRef.current) {
                 stopRecording(true);
             }
+            // AudioContextのクリーンアップ
+            if (audioContextRef.current) {
+                audioContextRef.current.close().catch(e => logDebug('Error closing AudioContext:', e.message));
+                audioContextRef.current = null;
+            }
         };
-    }, [stopRecording]);
+    }, []);
 
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
