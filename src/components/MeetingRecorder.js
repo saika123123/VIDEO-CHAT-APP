@@ -3,6 +3,17 @@
 'use client';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
+// AudioWorkletプロセッサのコードを文字列として定義
+const keepAliveProcessor = `
+  class KeepAliveProcessor extends AudioWorkletProcessor {
+    process(inputs, outputs, parameters) {
+      // 音声データを処理し続けることで、マイクをアクティブに保つ
+      return true;
+    }
+  }
+  registerProcessor('keep-alive-processor', KeepAliveProcessor);
+`;
+
 const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users, socketRef }, ref) => {
     // State管理
     const [isRecording, setIsRecording] = useState(false);
@@ -22,11 +33,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const localSocketRef = useRef(null);
     const manualStopRef = useRef(false);
 
-    // ★ Web Audio API関連のRef
+    // Web Audio API関連のRef
     const audioContextRef = useRef(null);
     const mediaStreamSourceRef = useRef(null);
-    const scriptProcessorRef = useRef(null);
     const localStreamRef = useRef(null);
+    const audioWorkletNodeRef = useRef(null);
 
 
     // デバッグログ
@@ -34,10 +45,28 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         const timestamp = new Date().toISOString();
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data ? data : '');
     };
+    
+    // AudioContextをユーザー操作時に再開する
+    const resumeAudioContext = useCallback(async () => {
+        if (!audioContextRef.current) {
+            try {
+                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.error("AudioContextの作成に失敗しました:", e);
+                setError("音声機能の初期化に失敗しました。");
+                return;
+            }
+        }
+        if (audioContextRef.current.state === 'suspended') {
+            logDebug('Resuming AudioContext...');
+            await audioContextRef.current.resume();
+        }
+    }, []);
 
     // 親コンポーネントに公開するメソッド
     useImperativeHandle(ref, () => ({
         startRecording: async () => {
+            await resumeAudioContext(); // ユーザー操作の起点でAudioContextを有効化
             try {
                 if (!isAudioOn) throw new Error('マイクがミュートされています');
                 await startRecording();
@@ -60,41 +89,36 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         isCurrentlyRecording: () => isRecording
     }));
 
-    // ★ 音声ストリームを起動し、マイクをアクティブに保つ
+    // ★ 音声ストリームを起動し、マイクをアクティブに保つ (AudioWorklet版)
     const activateMicrophone = useCallback(async () => {
         try {
-            if (!audioContextRef.current) {
-                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            // ユーザー操作に応じてAudioContextを再開
-            if (audioContextRef.current.state === 'suspended') {
-                await audioContextRef.current.resume();
-            }
-
+            await resumeAudioContext();
+            
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
 
-            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
             
             mediaStreamSourceRef.current = audioContextRef.current.createMediaStreamSource(localStreamRef.current);
-            scriptProcessorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
             
-            scriptProcessorRef.current.onaudioprocess = () => {
-                // この中で何もしなくても、接続されているだけでマイクはアクティブに保たれる
-            };
+            // AudioWorkletの準備
+            const workletURL = URL.createObjectURL(new Blob([keepAliveProcessor], { type: 'application/javascript' }));
+            await audioContextRef.current.audioWorklet.addModule(workletURL);
 
-            mediaStreamSourceRef.current.connect(scriptProcessorRef.current);
-            scriptProcessorRef.current.connect(audioContextRef.current.destination);
+            audioWorkletNodeRef.current = new AudioWorkletNode(audioContextRef.current, 'keep-alive-processor');
+            
+            mediaStreamSourceRef.current.connect(audioWorkletNodeRef.current);
+            audioWorkletNodeRef.current.connect(audioContextRef.current.destination);
 
-            logDebug('Microphone activated and connected to AudioContext.');
+            logDebug('Microphone activated and connected to AudioWorklet.');
         } catch (err) {
             console.error("マイクの起動に失敗:", err);
             throw new Error(`マイクへのアクセスが許可されていません: ${err.message}`);
         }
-    }, []);
+    }, [resumeAudioContext]);
 
-    // ★ マイクの無効化
+    // ★ マイクの無効化 (AudioWorklet版)
     const deactivateMicrophone = useCallback(() => {
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -104,9 +128,9 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             mediaStreamSourceRef.current.disconnect();
             mediaStreamSourceRef.current = null;
         }
-        if (scriptProcessorRef.current) {
-            scriptProcessorRef.current.disconnect();
-            scriptProcessorRef.current = null;
+        if(audioWorkletNodeRef.current) {
+            audioWorkletNodeRef.current.disconnect();
+            audioWorkletNodeRef.current = null;
         }
         logDebug('Microphone deactivated.');
     }, []);
@@ -209,7 +233,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         manualStopRef.current = false;
 
         try {
-            // ★ マイクをアクティブ化
             await activateMicrophone();
 
             const response = await fetch('/yoriai/api/meetings', {
@@ -245,7 +268,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             setError(error.message);
             setIsRecording(false);
             isRecordingRef.current = false;
-            deactivateMicrophone(); // ★ 失敗時にマイクを解放
+            deactivateMicrophone();
         } finally {
             setIsSaving(false);
         }
@@ -264,7 +287,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             recognitionRef.current = null;
         }
         
-        // ★ マイクの無効化
         deactivateMicrophone();
 
         const currentMeetingId = meetingIdRef.current;
@@ -318,7 +340,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
             if (initiatorId !== userId && isAudioOn) {
                 try {
-                    await activateMicrophone(); // ★ リモート開始でもマイクを起動
+                    await activateMicrophone();
                     if (!recognitionRef.current) initializeSpeechRecognition();
                     recognitionRef.current.start();
                 } catch (error) {
