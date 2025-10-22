@@ -108,46 +108,52 @@ const createAudioOnlyPlaceholder = (userName) => {
     return stream;
 };
 
+// ★★★ ここからが今回の修正の核心部分です ★★★
 // メディア取得関数の定義
-const getMediaStream = async (cameraEnabled = true) => {
-    try {
-        // カメラとマイクのオプション
-        const audioConstraints = {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-        };
+const getMediaStream = async (userName) => {
+    let stream;
+    let hasVideo = true;
 
-        // カメラが有効な場合はビデオも要求
-        const constraints = {
-            audio: audioConstraints,
-            video: cameraEnabled ? {
+    try {
+        // まず映像と音声の両方を試行
+        stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
+            video: {
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }
-            } : false
-        };
-
-        // メディア取得
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        return stream;
+            },
+        });
     } catch (err) {
-        console.error('Error accessing media devices:', err);
-
-        // カメラエラーの場合、音声のみで再試行
-        if (cameraEnabled && (
-            err.name === 'NotFoundError' ||
-            err.name === 'NotAllowedError' ||
-            err.name === 'NotReadableError' ||
-            err.name === 'OverconstrainedError'
-        )) {
-            console.log('Camera not available, trying audio only');
-            return getMediaStream(false);  // カメラなしで再帰呼び出し
+        console.error('Error accessing media devices with video:', err);
+        // カメラに失敗した場合、音声のみで再試行
+        try {
+            console.log('Camera failed, trying audio only...');
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            
+            // ダミーの映像トラックを作成
+            const placeholderStream = createAudioOnlyPlaceholder(userName);
+            
+            // 取得した音声トラックをダミー映像のストリームに追加
+            audioStream.getAudioTracks().forEach(track => {
+                placeholderStream.addTrack(track);
+            });
+            
+            stream = placeholderStream;
+            hasVideo = false; // カメラは利用不可
+        } catch (audioErr) {
+            console.error('Failed to get audio-only stream:', audioErr);
+            throw new Error(`マイクへのアクセスにも失敗しました: ${audioErr.message}`);
         }
-
-        throw new Error(`デバイスへのアクセスに失敗しました: ${err.message}`);
     }
+    return { stream, hasVideo };
 };
+// ★★★ ここまでが今回の修正の核心部分です ★★★
+
 
 export default function VideoRoom({ roomId, userId }) {
     // State管理
@@ -875,57 +881,28 @@ export default function VideoRoom({ roomId, userId }) {
 
     // 初期化処理
     useEffect(() => {
-        mountedRef.current = true;
+        if (hasInitialized.current) return;
+        hasInitialized.current = true;
 
-        const initialize = async () => {
-            if (!roomId || !userId || userNameFetchedRef.current) return;
+        const init = async () => {
+            if (!roomId || !userId) return;
 
             try {
                 const name = await fetchUserName();
                 if (!mountedRef.current) return;
                 if (!name) throw new Error('ユーザー名の取得に失敗しました');
 
-                let stream;
-                if (process.env.NODE_ENV === 'development' && window.location.search.includes('test=true')) {
-                    stream = createFakeStream(name);
-                } else {
-                    try {
-                        // MediaAPIを使ってカメラとマイクにアクセス
-                        stream = await getMediaStream();
-
-                        // カメラのトラックがない場合はカメラOFFとして扱う
-                        const hasVideoTrack = stream.getVideoTracks().length > 0;
-                        setIsCameraOn(hasVideoTrack);
-
-                        if (!hasVideoTrack) {
-                            // カメラなしの場合は音声ストリームのみ使用し、プレースホルダーを作成
-                            const audioStream = stream;
-                            const placeholderStream = createAudioOnlyPlaceholder(name);
-
-                            // オーディオトラックを追加
-                            if (audioStream.getAudioTracks().length > 0) {
-                                const audioTrack = audioStream.getAudioTracks()[0];
-                                placeholderStream.addTrack(audioTrack);
-                            }
-
-                            stream = placeholderStream;
-                        }
-                    } catch (err) {
-                        console.error('Error accessing media devices:', err);
-                        throw new Error(`デバイスへのアクセスに失敗しました: ${err.message}`);
-                    }
-                }
+                const { stream, hasVideo } = await getMediaStream(name);
 
                 if (!mountedRef.current) {
-                    if (stream.stopFakeStream) stream.stopFakeStream();
                     stream.getTracks().forEach(track => track.stop());
                     return;
                 }
 
                 console.log('Local stream obtained:', stream);
                 localStreamRef.current = stream;
+                setIsCameraOn(hasVideo);
                 setIsConnecting(false);
-                userNameFetchedRef.current = true;
 
                 initializeSocketConnection(name);
             } catch (error) {
@@ -937,14 +914,11 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        initialize();
+        init();
 
         return () => {
             mountedRef.current = false;
             if (localStreamRef.current) {
-                if (localStreamRef.current.stopFakeStream) {
-                    localStreamRef.current.stopFakeStream();
-                }
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
 
