@@ -4,10 +4,20 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 // AudioWorkletプロセッサのコードを文字列として定義
+// ★ 音声データを実際に参照する処理を追加
 const keepAliveProcessor = `
   class KeepAliveProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
-      // This function being called keeps the microphone active.
+      // By accessing the input data, we signal to the browser that the stream is in use.
+      const input = inputs[0];
+      if (input && input.length > 0) {
+        const channelData = input[0];
+        // We don't need to do anything with the data, just access it.
+        if(channelData && channelData.length > 0) {
+           // This line is just to ensure the variable is "used" and not optimized away.
+           const _ = channelData[0];
+        }
+      }
       return true;
     }
   }
@@ -21,6 +31,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isInitiator, setIsInitiator] = useState(false); // ★ 修正：setIsInitiatorを定義
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
     // Refs
@@ -69,12 +80,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
 
     const activateMicrophone = useCallback(async () => {
         try {
-            if (!audioContextRef.current) {
-                 throw new Error("AudioContextが初期化されていません。");
-            }
             await resumeAudioContext();
-
-            if (localStreamRef.current) deactivateMicrophone();
+            
+            if (localStreamRef.current) {
+                deactivateMicrophone();
+            }
 
             localStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
             
@@ -115,7 +125,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         logDebug('Microphone deactivated.');
     }, []);
 
-    // ... (saveSpeechToQueue, processSpeechQueue, handleSpeechResult remain the same)
     const saveSpeechToQueue = useCallback((content, speakerId, speakerName) => {
         if (!content || !content.trim() || !meetingIdRef.current) return;
         pendingSpeechesRef.current.push({ content: content.trim(), timestamp: new Date().toISOString(), userId: speakerId, userName: speakerName, retryCount: 0 });
@@ -164,7 +173,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
             }
         }
     }, [userId, userName, saveSpeechToQueue, socketRef]);
-
 
     const initializeSpeechRecognition = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -296,10 +304,9 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         setIsSaving(false);
         pendingSpeechesRef.current = [];
     };
-
-    // ★ 初期化 Effect
+    
     useEffect(() => {
-        const initAudio = async () => {
+        const initAudio = () => {
             if (!audioContextRef.current) {
                 try {
                     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -310,9 +317,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, users
         };
         initAudio();
 
-        const handleFirstInteraction = () => {
-            resumeAudioContext();
-        };
+        const handleFirstInteraction = () => resumeAudioContext();
         window.addEventListener('click', handleFirstInteraction, { once: true });
         window.addEventListener('keydown', handleFirstInteraction, { once: true });
 
