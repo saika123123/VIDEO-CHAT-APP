@@ -2,7 +2,6 @@ import cors from 'cors';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import prisma from './src/lib/db.js'; // ★ Prisma Clientをインポート
 import {
     calculateScore,
     getMixedQuestions,
@@ -349,49 +348,17 @@ io.on('connection', (socket) => {
     socket.on('error', (error) => {
         console.error('Socket error:', error);
     });
-    
-    // ★★★ 音声データの中継とDB保存処理を修正 ★★★
-    socket.on('speech-data', async (data) => {
-        try {
-            const { content, userId, userName, meetingId } = data;
-            console.log(`Received speech data from ${userName} for meeting ${meetingId}`);
 
-            if (!meetingId || !userId || !content) {
-                console.warn('Invalid speech data received:', data);
-                return;
-            }
+    // ★★★ 音声データの中継 ★★★
+    socket.on('speech-data', (data) => {
+        console.log(`Received speech data from ${data.userName} (${data.userId}): "${data.content.substring(0, 20)}..."`);
 
-            // サーバーサイドで直接データベースに発言を保存
-            const speech = await prisma.speech.create({
-                data: {
-                    meetingId,
-                    userId,
-                    content: content.trim(),
-                },
-                include: {
-                    user: {
-                        select: { name: true }
-                    }
-                }
-            });
-
-            const newSpeechPayload = {
-                id: speech.id,
-                content: speech.content,
-                timestamp: speech.timestamp,
-                userId: speech.userId,
-                userName: speech.user.name
-            };
-
-            // ルーム内の全員（送信者含む）に新しい発言データをブロードキャスト
-            io.to(roomId).emit('new-speech', newSpeechPayload);
-            console.log('Broadcasted new speech:', newSpeechPayload);
-
-        } catch (error) {
-            console.error('Error processing speech-data:', error);
-            // エラーが発生したことをクライアントに通知することも可能
-            socket.emit('speech-error', { message: '発言の保存に失敗しました。' });
-        }
+        // 送信者以外のルーム内の全員に転送
+        socket.to(roomId).emit('speech-data', {
+            content: data.content,
+            userId: data.userId,
+            userName: data.userName
+        });
     });
 
     // 録音開始イベント
