@@ -1319,7 +1319,7 @@ export default function VideoRoom({ roomId, userId }) {
                     userId={userId}
                     userName={userName}
                     isAudioOn={isAudioOn}
-                    users={users}
+                    localStream={localStreamRef.current} 
                     socketRef={socketRef}
                 />
             </div>
