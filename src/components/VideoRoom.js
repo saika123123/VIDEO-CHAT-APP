@@ -582,7 +582,7 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // ★★★ 議事録ページへ遷移するヘルパー関数 (絶対パス) ★★★
+    // 議事録ページへ遷移するヘルパー関数 (絶対パス)
     const goToMinutes = () => {
         if (typeof window !== 'undefined') {
             const baseUrl = window.location.origin;
