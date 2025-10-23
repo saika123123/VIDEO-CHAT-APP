@@ -86,73 +86,85 @@ const createFakeStream = (userName) => {
 // カメラなしのユーザー用プレースホルダー生成関数
 const createAudioOnlyPlaceholder = (userName) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
+    canvas.width = 320; // 解像度を少し下げる
+    canvas.height = 240;
     const ctx = canvas.getContext('2d');
-    const stream = canvas.captureStream(5); // 低フレームレートで十分
+    const stream = canvas.captureStream(2); // フレームレートをさらに下げる
 
-    // 初期描画
-    ctx.fillStyle = '#f3f4f6'; // bg-gray-100相当
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const draw = () => {
+        // 背景
+        ctx.fillStyle = '#1a202c'; // 濃いグレー
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // ユーザー名と「カメラOFF」の表示
-    ctx.fillStyle = '#4b5563'; // text-gray-600相当
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(userName, canvas.width / 2, canvas.height / 2 - 30);
+        // マイクアイコン
+        ctx.fillStyle = '#a0aec0'; // 薄いグレー
+        ctx.font = '80px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🎤', canvas.width / 2, canvas.height / 2 - 20);
 
-    ctx.font = 'bold 32px sans-serif';
-    ctx.fillText('カメラOFF', canvas.width / 2, canvas.height / 2 + 30);
+        // ユーザー名
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillText(userName, canvas.width / 2, canvas.height / 2 + 50);
+    };
 
+    draw(); // 最初に一度描画
+
+    // 描画の更新は不要なので、インターバルを削除
     return stream;
 };
 
 // ★★★ ここからが今回の修正の核心部分です ★★★
 // メディア取得関数の定義
-const getMediaStream = async (userName) => {
+const getMediaStream = async (userName, video = true, audio = true) => {
     let stream;
-    let hasVideo = true;
+    let hasVideo = video;
 
     try {
-        // まず映像と音声の両方を試行
-        stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
+        const constraints = {
+            audio: audio ? {
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true,
-            },
-            video: {
+            } : false,
+            video: video ? {
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }
-            },
-        });
-    } catch (err) {
-        console.error('Error accessing media devices with video:', err);
-        // カメラに失敗した場合、音声のみで再試行
-        try {
-            console.log('Camera failed, trying audio only...');
-            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            
-            // ダミーの映像トラックを作成
+            } : false,
+        };
+
+        if (!video && !audio) {
+            throw new Error("カメラとマイクの両方が要求されていません。");
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        if (!video) { // 音声のみを要求した場合
             const placeholderStream = createAudioOnlyPlaceholder(userName);
-            
-            // 取得した音声トラックをダミー映像のストリームに追加
-            audioStream.getAudioTracks().forEach(track => {
-                placeholderStream.addTrack(track);
-            });
-            
+            stream.getAudioTracks().forEach(track => placeholderStream.addTrack(track));
             stream = placeholderStream;
-            hasVideo = false; // カメラは利用不可
-        } catch (audioErr) {
-            console.error('Failed to get audio-only stream:', audioErr);
-            throw new Error(`マイクへのアクセスにも失敗しました: ${audioErr.message}`);
+        }
+
+    } catch (err) {
+        console.error(`getUserMedia error (video: ${video}, audio: ${audio}):`, err);
+        // ビデオありで失敗した場合、音声のみで再試行
+        if (video) {
+            console.log('Trying audio-only fallback...');
+            try {
+                return await getMediaStream(userName, false, true); // video: falseで再帰呼び出し
+            } catch (audioErr) {
+                console.error('Audio-only fallback also failed:', audioErr);
+                throw audioErr; // 音声もダメならエラーをスロー
+            }
+        } else {
+            // 音声のみでも失敗した場合
+            throw err;
         }
     }
     return { stream, hasVideo };
 };
-// ★★★ ここまでが今回の修正の核心部分です ★★★
 
 
 export default function VideoRoom({ roomId, userId }) {
@@ -594,8 +606,8 @@ export default function VideoRoom({ roomId, userId }) {
         if (typeof window !== 'undefined') {
             const baseUrl = window.location.origin;
             // ★ ルームIDをクエリパラメータとして渡す
-            const fullUrl = `${baseUrl}/yoriai/minutes?roomId=${roomId}`; 
-            window.location.href = fullUrl; 
+            const fullUrl = `${baseUrl}/yoriai/minutes?roomId=${roomId}`;
+            window.location.href = fullUrl;
         }
     };
 
@@ -887,14 +899,16 @@ export default function VideoRoom({ roomId, userId }) {
 
         const init = async () => {
             if (!roomId || !userId) return;
+            setConnectionStatus('connecting');
 
             try {
                 const name = await fetchUserName();
                 if (!mountedRef.current) return;
                 if (!name) throw new Error('ユーザー名の取得に失敗しました');
 
-                const { stream, hasVideo } = await getMediaStream(name);
+                setUserName(name); // ★ ユーザー名を先にセット
 
+                const { stream, hasVideo } = await getMediaStream(name); // ★ 修正された関数を呼ぶ
                 if (!mountedRef.current) {
                     stream.getTracks().forEach(track => track.stop());
                     return;
@@ -904,29 +918,28 @@ export default function VideoRoom({ roomId, userId }) {
                 localStreamRef.current = stream;
                 setIsCameraOn(hasVideo);
                 setIsConnecting(false);
+                setConnectionStatus('initializing_socket');
 
                 initializeSocketConnection(name);
             } catch (error) {
                 console.error('Initialization error:', error);
                 if (!mountedRef.current) return;
-                setDeviceError(error.message);
+                setDeviceError(`マイクまたはカメラへのアクセスに失敗しました。ブラウザの設定で許可してください。(${error.name})`);
                 setIsConnecting(false);
-                updateDebugInfo({ initError: error.message });
+                setConnectionStatus('error');
             }
         };
 
         init();
 
-        return () => {
+        return () => { // クリーンアップ関数
             mountedRef.current = false;
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
-
             Object.keys(peersRef.current).forEach(socketId => {
                 cleanupPeerConnection(socketId);
             });
-
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
@@ -1101,14 +1114,14 @@ export default function VideoRoom({ roomId, userId }) {
             </div>
 
             {/* ビデオグリッド - 画面いっぱいを活用 */}
-            <div 
+            <div
                 className={`
                     grid gap-1 sm:gap-2 pt-8 pb-20 px-1 sm:px-2
                     portrait:${getGridLayout().portrait}
                     landscape:${getGridLayout().landscape}
                     h-screen overflow-hidden
                 `}
-                style={{ 
+                style={{
                     gridTemplateRows: 'repeat(auto-fit, minmax(0, 1fr))',
                     height: 'calc(100vh - 100px)'
                 }}
@@ -1136,16 +1149,16 @@ export default function VideoRoom({ roomId, userId }) {
                             {!isAudioOn && (
                                 <div className="bg-red-500 p-1 rounded-full">
                                     <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 14l2-2-2-2M21 12H9"/>
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 14l2-2-2-2M21 12H9" />
                                     </svg>
                                 </div>
                             )}
                             {!isCameraOn && (
                                 <div className="bg-red-500 p-1 rounded-full">
                                     <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 14l2-2-2-2M21 12H9"/>
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 14l2-2-2-2M21 12H9" />
                                     </svg>
                                 </div>
                             )}
@@ -1176,14 +1189,14 @@ export default function VideoRoom({ roomId, userId }) {
                                 {user.isAudioOff && (
                                     <div className="bg-red-500 p-1 rounded-full">
                                         <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                                         </svg>
                                     </div>
                                 )}
                                 {user.isCameraOff && (
                                     <div className="bg-red-500 p-1 rounded-full">
                                         <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                         </svg>
                                     </div>
                                 )}
@@ -1262,18 +1275,18 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
 
                     <div className="flex flex-col items-center">
-                    <button
-                        onClick={goToMinutes} // ★ 3. 新しいヘルパー関数を呼び出し
-                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
-                    >
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                            />
-                        </svg>
-                    </button>
-                    <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
-                </div>
+                        <button
+                            onClick={goToMinutes} // ★ 3. 新しいヘルパー関数を呼び出し
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
+                        >
+                            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
+                    </div>
 
                     {/* 退出ボタン */}
                     <div className="flex flex-col items-center">
@@ -1319,7 +1332,7 @@ export default function VideoRoom({ roomId, userId }) {
                     userId={userId}
                     userName={userName}
                     isAudioOn={isAudioOn}
-                    localStream={localStreamRef.current} 
+                    localStream={localStreamRef.current}
                     socketRef={socketRef}
                 />
             </div>
