@@ -3,20 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import MeetingRecorder from './MeetingRecorder';
 
-// WebRTC設定の改善
 const configuration = {
     iceServers: [
-        // Google提供の無料STUNサーバーを追加
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-
-        // Twilioの無料STUNサーバー
         { urls: 'stun:global.stun.twilio.com:3478' },
-
-        // オープンソースのSTUNサーバー
         { urls: 'stun:stun.stunprotocol.org:3478' }
     ],
     iceCandidatePoolSize: 10,
@@ -24,24 +18,20 @@ const configuration = {
     rtcpMuxPolicy: 'require'
 };
 
-// 接続再試行の設定
 const RECONNECTION_CONFIG = {
     maxRetries: 3,
-    baseDelay: 1000,  // 1秒
-    maxDelay: 10000   // 10秒
+    baseDelay: 1000,
+    maxDelay: 10000
 };
 
-// 背景画像のURLを生成する関数
 const getBackgroundUrl = (path) => {
     if (path.startsWith('http')) return path;
-    // パスに /yoriai/ が含まれていない場合は追加
     if (!path.startsWith('/yoriai/')) {
         return `${window.location.origin}/yoriai${path}`;
     }
     return `${window.location.origin}${path}`;
 };
 
-// テスト用のフェイクストリームを生成する関数
 const createFakeStream = (userName) => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
@@ -83,20 +73,17 @@ const createFakeStream = (userName) => {
     return stream;
 };
 
-// カメラなしのユーザー用プレースホルダー生成関数
 const createAudioOnlyPlaceholder = (userName) => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
     canvas.height = 480;
     const ctx = canvas.getContext('2d');
-    const stream = canvas.captureStream(5); // 低フレームレートで十分
+    const stream = canvas.captureStream(5);
 
-    // 初期描画
-    ctx.fillStyle = '#f3f4f6'; // bg-gray-100相当
+    ctx.fillStyle = '#f3f4f6';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // ユーザー名と「カメラOFF」の表示
-    ctx.fillStyle = '#4b5563'; // text-gray-600相当
+    ctx.fillStyle = '#4b5563';
     ctx.font = 'bold 48px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -108,14 +95,11 @@ const createAudioOnlyPlaceholder = (userName) => {
     return stream;
 };
 
-// ★★★ ここからが今回の修正の核心部分です ★★★
-// メディア取得関数の定義
 const getMediaStream = async (userName) => {
     let stream;
     let hasVideo = true;
 
     try {
-        // まず映像と音声の両方を試行
         stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 echoCancellation: true,
@@ -130,21 +114,18 @@ const getMediaStream = async (userName) => {
         });
     } catch (err) {
         console.error('Error accessing media devices with video:', err);
-        // カメラに失敗した場合、音声のみで再試行
         try {
             console.log('Camera failed, trying audio only...');
             const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             
-            // ダミーの映像トラックを作成
             const placeholderStream = createAudioOnlyPlaceholder(userName);
             
-            // 取得した音声トラックをダミー映像のストリームに追加
             audioStream.getAudioTracks().forEach(track => {
                 placeholderStream.addTrack(track);
             });
             
             stream = placeholderStream;
-            hasVideo = false; // カメラは利用不可
+            hasVideo = false;
         } catch (audioErr) {
             console.error('Failed to get audio-only stream:', audioErr);
             throw new Error(`マイクへのアクセスにも失敗しました: ${audioErr.message}`);
@@ -152,11 +133,8 @@ const getMediaStream = async (userName) => {
     }
     return { stream, hasVideo };
 };
-// ★★★ ここまでが今回の修正の核心部分です ★★★
-
 
 export default function VideoRoom({ roomId, userId }) {
-    // State管理
     const [users, setUsers] = useState([]);
     const [userName, setUserName] = useState('');
     const [background, setBackground] = useState('/yoriai/backgrounds/default.jpg');
@@ -173,7 +151,10 @@ export default function VideoRoom({ roomId, userId }) {
     const [recordingInitiator, setRecordingInitiator] = useState(null);
     const [recordingErrorMessage, setRecordingErrorMessage] = useState(null);
 
-    // Refs
+    // ★追加: 翻訳機能用のState
+    const [isTranslationOn, setIsTranslationOn] = useState(false);
+    const [subtitles, setSubtitles] = useState([]);
+
     const socketRef = useRef();
     const peersRef = useRef({});
     const localStreamRef = useRef();
@@ -185,8 +166,9 @@ export default function VideoRoom({ roomId, userId }) {
     const meetingRecorderRef = useRef(null);
     const mountedRef = useRef(true);
     const hasInitialized = useRef(false);
+    // ★追加: 翻訳設定のRef (イベントリスナー内での参照用)
+    const isTranslationOnRef = useRef(false);
 
-    // 会話記録の開始/停止を切り替える関数
     const toggleRecording = async () => {
         if (!isAudioOn) {
             alert('録音を開始するにはマイクをオンにしてください');
@@ -199,13 +181,11 @@ export default function VideoRoom({ roomId, userId }) {
             setRecordingErrorMessage(null);
 
             if (isRecording) {
-                // 録音停止
                 console.log("録音停止を開始します");
                 await meetingRecorderRef.current?.stopRecording();
                 setIsRecording(false);
                 console.log("録音停止しました");
             } else {
-                // 録音開始
                 console.log("録音開始を試みます");
                 const success = await meetingRecorderRef.current?.startRecording();
                 if (success) {
@@ -222,7 +202,57 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // ユーティリティ関数
+    // ★追加: 翻訳機能のON/OFF切り替え
+    const toggleTranslation = () => {
+        setIsTranslationOn(prev => {
+            const newValue = !prev;
+            isTranslationOnRef.current = newValue;
+            if (!newValue) setSubtitles([]); // OFFにした時は字幕をクリア
+            return newValue;
+        });
+    };
+
+    // ★追加: 字幕生成処理
+    const addSubtitle = async (text, speakerName, isLocal = false) => {
+        if (!isTranslationOnRef.current) return;
+
+        const id = Date.now();
+        // 翻訳中として原文を表示
+        setSubtitles(prev => [...prev, { id, text, speakerName, isLocal, isTranslating: true }]);
+
+        try {
+            // 翻訳API呼び出し
+            const response = await fetch('/yoriai/api/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, targetLang: 'en' })
+            });
+            
+            const data = await response.json();
+            
+            if (data.translatedText) {
+                // 翻訳結果で字幕を更新
+                setSubtitles(prev => prev.map(sub => 
+                    sub.id === id 
+                        ? { ...sub, text: `${text}\n(EN: ${data.translatedText})`, isTranslating: false } 
+                        : sub
+                ));
+            }
+        } catch (error) {
+            console.error('Translation failed:', error);
+        }
+
+        // 10秒後に字幕を消す
+        setTimeout(() => {
+            setSubtitles(prev => prev.filter(sub => sub.id !== id));
+        }, 10000);
+    };
+
+    // ★追加: 自分の発言時のハンドラ (MeetingRecorderから呼ばれる)
+    const handleLocalSpeech = (content) => {
+        addSubtitle(content, userName, true);
+    };
+
     const calculateReconnectionDelay = (attempts) => {
         const delay = RECONNECTION_CONFIG.baseDelay * Math.pow(2, attempts);
         return Math.min(delay, RECONNECTION_CONFIG.maxDelay);
@@ -254,20 +284,14 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // グリッドレイアウトの計算関数
     const getGridLayout = () => {
         const totalParticipants = users.length + 1;
-
-        // 縦画面と横画面で完全に異なるレイアウト戦略
         return {
-            // 縦画面用のクラス
             portrait: totalParticipants === 1 ? 'grid-cols-1' :
                 totalParticipants === 2 ? 'grid-cols-1' :
                     totalParticipants <= 4 ? 'grid-cols-2' :
                         totalParticipants <= 6 ? 'grid-cols-2' :
                             totalParticipants <= 9 ? 'grid-cols-3' : 'grid-cols-3',
-
-            // 横画面用のクラス  
             landscape: totalParticipants === 1 ? 'grid-cols-1' :
                 totalParticipants === 2 ? 'grid-cols-2' :
                     totalParticipants <= 4 ? 'grid-cols-2' :
@@ -276,11 +300,10 @@ export default function VideoRoom({ roomId, userId }) {
                                 totalParticipants <= 12 ? 'grid-cols-4' : 'grid-cols-4'
         };
     };
-    // WebRTC接続管理
+
     const createPeer = (targetSocketId, isInitiator = true) => {
         console.log(`Creating peer connection for ${targetSocketId}, isInitiator: ${isInitiator}`);
 
-        // 既存の接続のクリーンアップ
         if (peersRef.current[targetSocketId]) {
             cleanupPeerConnection(targetSocketId);
         }
@@ -290,7 +313,6 @@ export default function VideoRoom({ roomId, userId }) {
         let connectionTimeout = null;
         let isReconnecting = false;
 
-        // ICE候補のキュー処理
         const processIceCandidateQueue = async () => {
             while (iceCandidatesQueue.length > 0 && peerConnection.remoteDescription) {
                 const candidate = iceCandidatesQueue.shift();
@@ -304,7 +326,6 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // 接続再試行の実装
         const restartConnection = async () => {
             if (isReconnecting) return;
             isReconnecting = true;
@@ -341,7 +362,6 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // 接続状態の監視
         peerConnection.onconnectionstatechange = () => {
             console.log(`Connection state changed for ${targetSocketId}:`, peerConnection.connectionState);
             updateDebugInfo({ [`peerState_${targetSocketId}`]: peerConnection.connectionState });
@@ -365,7 +385,6 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // ICE接続状態の監視
         peerConnection.oniceconnectionstatechange = () => {
             console.log(`ICE connection state for ${targetSocketId}:`, peerConnection.iceConnectionState);
             updateDebugInfo({ [`iceState_${targetSocketId}`]: peerConnection.iceConnectionState });
@@ -376,13 +395,11 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // シグナリング状態の監視
         peerConnection.onsignalingstatechange = () => {
             console.log(`Signaling state for ${targetSocketId}:`, peerConnection.signalingState);
             updateDebugInfo({ [`signalingState_${targetSocketId}`]: peerConnection.signalingState });
         };
 
-        // ICE候補の送信
         peerConnection.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
                 console.log('Sending ICE candidate to', targetSocketId);
@@ -393,7 +410,6 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // メディアストリームの処理
         peerConnection.ontrack = (event) => {
             console.log('Received remote track:', event);
             const remoteStream = event.streams[0];
@@ -424,7 +440,6 @@ export default function VideoRoom({ roomId, userId }) {
             });
         };
 
-        // ネゴシエーションの処理
         peerConnection.onnegotiationneeded = async () => {
             try {
                 if (makingOfferRef.current) return;
@@ -446,7 +461,6 @@ export default function VideoRoom({ roomId, userId }) {
             }
         };
 
-        // ローカルストリームの追加
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => {
                 try {
@@ -470,11 +484,9 @@ export default function VideoRoom({ roomId, userId }) {
                         throw new Error('Invalid session description: missing type');
                     }
 
-                    // シグナリング状態をチェック
                     const signalingState = peerConnection.signalingState;
                     console.log(`Current signaling state before setLocalDescription: ${signalingState}`);
 
-                    // 適切な状態チェック
                     const isValidState = (desc.type === 'offer' &&
                         (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
                         (desc.type === 'answer' &&
@@ -495,15 +507,12 @@ export default function VideoRoom({ roomId, userId }) {
                         descType: desc?.type
                     });
 
-                    // 特定のエラー状態での回復処理
                     if (err.name === 'InvalidStateError') {
                         try {
-                            // シグナリング状態をリセット
                             if (peerConnection.signalingState !== 'stable') {
                                 await peerConnection.setLocalDescription({ type: "rollback" });
                                 console.log('Successfully rolled back signaling state');
                             }
-                            // 再度ローカル記述を設定
                             await peerConnection.setLocalDescription(desc);
                         } catch (recoveryErr) {
                             console.error('Failed to recover from invalid state:', recoveryErr);
@@ -517,11 +526,9 @@ export default function VideoRoom({ roomId, userId }) {
                         throw new Error('Invalid session description: missing type');
                     }
 
-                    // シグナリング状態をチェック
                     const signalingState = peerConnection.signalingState;
                     console.log(`Current signaling state before setRemoteDescription: ${signalingState}`);
 
-                    // 適切な状態チェック
                     const isValidState = (desc.type === 'offer' &&
                         (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
                         (desc.type === 'answer' &&
@@ -589,22 +596,18 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // 議事録ページへ遷移するヘルパー関数 (絶対パス)
     const goToMinutes = () => {
         if (typeof window !== 'undefined') {
             const baseUrl = window.location.origin;
-            // ★ ルームIDをクエリパラメータとして渡す
             const fullUrl = `${baseUrl}/yoriai/minutes?roomId=${roomId}`; 
             window.location.href = fullUrl; 
         }
     };
 
-
-    // Socket.IO接続の初期化
     const initializeSocketConnection = (name) => {
         socketRef.current = io(window.location.origin, {
             path: '/yoriai/socket.io/',
-            transports: ['polling', 'websocket'], // ポーリングとWebSocketの両方を許可
+            transports: ['polling', 'websocket'],
             secure: true,
             rejectUnauthorized: false,
             query: { roomId, userId, userName: name },
@@ -645,13 +648,18 @@ export default function VideoRoom({ roomId, userId }) {
                 return updatedUsers;
             });
 
-            // 新しいピア接続の作成
             const filteredUsers = newUsers.filter(u => u.userId !== userId);
             filteredUsers.forEach(user => {
                 if (!peersRef.current[user.socketId]) {
                     peersRef.current[user.socketId] = createPeer(user.socketId, true);
                 }
             });
+        });
+
+        // ★追加: 他ユーザーの発言を受信して字幕を表示
+        socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
+            console.log(`Received speech from ${speakerName}: ${content}`);
+            addSubtitle(content, speakerName, false);
         });
 
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {
@@ -724,7 +732,6 @@ export default function VideoRoom({ roomId, userId }) {
             console.log('User disconnected:', disconnectedUserId);
             setUsers(prevUsers => prevUsers.filter(user => user.userId !== disconnectedUserId));
 
-            // クリーンアップ
             Object.entries(peersRef.current).forEach(([socketId, peer]) => {
                 if (users.find(u => u.socketId === socketId && u.userId === disconnectedUserId)) {
                     cleanupPeerConnection(socketId);
@@ -741,25 +748,18 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
-    // カメラとマイクの制御
     const toggleCamera = () => {
         if (localStreamRef.current) {
             const videoTracks = localStreamRef.current.getVideoTracks();
 
             if (videoTracks.length > 0) {
-                // カメラがある場合は有効/無効を切り替え
                 videoTracks.forEach(track => {
                     track.enabled = !track.enabled;
                 });
                 setIsCameraOn(videoTracks[0].enabled);
             } else if (isCameraOn) {
-                // 既にプレースホルダーを使用している場合
                 setIsCameraOn(false);
-
-                // 既存の接続にカメラOFFを通知する処理があれば実行
-                // (必要に応じて実装)
             } else {
-                // カメラをONにする場合、カメラへのアクセスを再試行
                 navigator.mediaDevices.getUserMedia({
                     video: {
                         width: { ideal: 1280 },
@@ -769,39 +769,26 @@ export default function VideoRoom({ roomId, userId }) {
                 })
                     .then(videoStream => {
                         const videoTrack = videoStream.getVideoTracks()[0];
-
-                        // 音声トラックを保持したまま、新しいビデオトラックを追加
                         const newStream = new MediaStream();
-
-                        // 既存の音声トラックを追加
                         localStreamRef.current.getAudioTracks().forEach(track => {
                             newStream.addTrack(track);
                         });
-
-                        // 新しいビデオトラックを追加
                         newStream.addTrack(videoTrack);
-
-                        // 既存のストリームを置き換え
                         videoStream.getVideoTracks().forEach(track => {
-                            track.stop();  // 元のストリームのビデオトラックを停止
+                            track.stop();
                         });
-
                         localStreamRef.current = newStream;
-
-                        // 既存のピア接続にビデオトラックを追加
                         Object.values(peersRef.current).forEach(peer => {
                             const senders = peer.peerConnection.getSenders();
                             const videoSender = senders.find(sender =>
                                 sender.track && sender.track.kind === 'video'
                             );
-
                             if (videoSender) {
                                 videoSender.replaceTrack(videoTrack);
                             } else {
                                 peer.peerConnection.addTrack(videoTrack, newStream);
                             }
                         });
-
                         setIsCameraOn(true);
                     })
                     .catch(err => {
@@ -812,7 +799,6 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // マイクをオフにする際の処理を修正
     const toggleAudio = () => {
         if (localStreamRef.current) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
@@ -820,19 +806,15 @@ export default function VideoRoom({ roomId, userId }) {
                 audioTrack.enabled = !audioTrack.enabled;
                 setIsAudioOn(audioTrack.enabled);
 
-                // マイクをオフにする際、録音中かつ自分が開始者なら警告を表示
                 if (!audioTrack.enabled && isRecording) {
                     if (recordingInitiator === userName) {
                         if (window.confirm('録音中にマイクをオフにすると、あなたの音声は記録されなくなります。続けますか？')) {
-                            // ユーザーが確認した場合は処理を続行
                         } else {
-                            // キャンセルした場合はマイクを再度オンに
                             audioTrack.enabled = true;
                             setIsAudioOn(true);
                             return;
                         }
                     } else {
-                        // 他の人が開始した録音の場合は警告のみ
                         alert('録音中にマイクをオフにすると、あなたの音声は記録されなくなります');
                     }
                 }
@@ -840,47 +822,38 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // 部屋を退出する
     const leaveRoom = async () => {
         try {
             setConnectionStatus('disconnecting');
 
-            // もし録音中なら、まず録音を停止して議事録を保存
             if (isRecording) {
                 try {
                     await meetingRecorderRef.current?.stopRecording();
                     console.log("退出前に録音を停止しました");
                 } catch (error) {
                     console.error("退出時の録音停止エラー:", error);
-                    // エラーがあっても退出処理は続行
                 }
             }
 
-            // メディアストリームの停止
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(track => track.stop());
             }
 
-            // WebRTC接続のクリーンアップ
             Object.keys(peersRef.current).forEach(socketId => {
                 cleanupPeerConnection(socketId);
             });
 
-            // Socket接続の切断
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
 
-            // ホームページへリダイレクト
             window.location.href = '/yoriai';
         } catch (error) {
             console.error('Error during room exit:', error);
-            // エラーが発生してもホームページへ移動
             window.location.href = '/yoriai';
         }
     };
 
-    // 初期化処理
     useEffect(() => {
         if (hasInitialized.current) return;
         hasInitialized.current = true;
@@ -933,7 +906,6 @@ export default function VideoRoom({ roomId, userId }) {
         };
     }, [roomId, userId]);
 
-    // 招待URLのコピー機能
     const copyInviteLink = () => {
         const url = `${window.location.origin}/yoriai/?room=${roomId}`;
         navigator.clipboard.writeText(url).then(() => {
@@ -942,11 +914,9 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
-    // 録音の開始/停止を処理するsocket.ioイベントリスナーを追加
     useEffect(() => {
         if (!socketRef.current) return;
 
-        // 他の誰かが録音を開始した時のハンドラ
         const handleRecordingStarted = ({ meetingId, initiatorId, initiatorName }) => {
             console.log(`Recording started by ${initiatorName || initiatorId}`);
             setIsRecording(true);
@@ -954,20 +924,17 @@ export default function VideoRoom({ roomId, userId }) {
             setRecordingErrorMessage(null);
         };
 
-        // 他の誰かが録音を停止した時のハンドラ
         const handleRecordingStopped = ({ meetingId, initiatorId }) => {
             console.log(`Recording stopped by ${initiatorId}`);
             setIsRecording(false);
             setRecordingInitiator(null);
         };
 
-        // 録音開始者が退出した場合のハンドラ
         const handleRecordingInitiatorLeft = ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
             console.log(`Recording initiator ${formerInitiatorName} left, but recording continues`);
             setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
         };
 
-        // イベントリスナーの登録
         socketRef.current.on('recording-started', handleRecordingStarted);
         socketRef.current.on('recording-stopped', handleRecordingStopped);
         socketRef.current.on('recording-initiator-left', handleRecordingInitiatorLeft);
@@ -1017,7 +984,6 @@ export default function VideoRoom({ roomId, userId }) {
                         カメラとマイクの使用許可が必要です
                     </div>
 
-                    {/* カメラなし参加オプション */}
                     <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 
                                 bg-white p-6 rounded-xl shadow-xl text-center max-w-md w-full">
                         <h3 className="text-xl font-bold mb-4">カメラへのアクセスが必要です</h3>
@@ -1029,7 +995,6 @@ export default function VideoRoom({ roomId, userId }) {
                             <button
                                 onClick={async () => {
                                     try {
-                                        // 音声のみで参加
                                         const audioStream = await navigator.mediaDevices.getUserMedia({
                                             audio: true,
                                             video: false
@@ -1040,22 +1005,16 @@ export default function VideoRoom({ roomId, userId }) {
                                             return;
                                         }
 
-                                        // 音声ストリームをセット
                                         localStreamRef.current = audioStream;
-
-                                        // プレースホルダーストリームを作成
                                         const placeholderStream = createAudioOnlyPlaceholder(userName || userId);
 
-                                        // オーディオトラックを追加
                                         if (audioStream.getAudioTracks().length > 0) {
                                             const audioTrack = audioStream.getAudioTracks()[0];
                                             placeholderStream.addTrack(audioTrack);
                                         }
 
-                                        // プレースホルダーストリームを設定
                                         localStreamRef.current = placeholderStream;
                                         setIsCameraOn(false);
-
                                         setIsConnecting(false);
                                         userNameFetchedRef.current = true;
                                         initializeSocketConnection(userName || userId);
@@ -1093,14 +1052,12 @@ export default function VideoRoom({ roomId, userId }) {
                 backgroundPosition: 'center'
             }}
         >
-            {/* ヘッダー部分 - 最小限に */}
             <div className="fixed top-1 left-1 z-10">
                 <div className="bg-black/60 backdrop-blur-sm text-white px-2 py-1 rounded-lg text-sm font-bold">
                     👥 {users.length + 1}人
                 </div>
             </div>
 
-            {/* ビデオグリッド - 画面いっぱいを活用 */}
             <div 
                 className={`
                     grid gap-1 sm:gap-2 pt-8 pb-20 px-1 sm:px-2
@@ -1113,7 +1070,6 @@ export default function VideoRoom({ roomId, userId }) {
                     height: 'calc(100vh - 100px)'
                 }}
             >
-                {/* ローカルビデオ */}
                 <div className="relative bg-gray-900 rounded-lg overflow-hidden shadow-lg">
                     <video
                         ref={ref => {
@@ -1126,12 +1082,10 @@ export default function VideoRoom({ roomId, userId }) {
                         muted
                         className="w-full h-full object-cover"
                     />
-                    {/* 名前ラベル - 下部に固定して顔に被らないように */}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs sm:text-sm font-bold truncate">
                             あなた ({userName})
                         </div>
-                        {/* ステータスアイコン - 右上に移動 */}
                         <div className="absolute top-2 right-2 flex gap-1">
                             {!isAudioOn && (
                                 <div className="bg-red-500 p-1 rounded-full">
@@ -1153,7 +1107,6 @@ export default function VideoRoom({ roomId, userId }) {
                     </div>
                 </div>
 
-                {/* リモートビデオ */}
                 {users.map(user => (
                     <div key={user.socketId} className="relative bg-gray-900 rounded-lg overflow-hidden shadow-lg">
                         <video
@@ -1166,12 +1119,10 @@ export default function VideoRoom({ roomId, userId }) {
                             playsInline
                             className="w-full h-full object-cover"
                         />
-                        {/* 名前ラベル - 下部に固定 */}
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                             <div className="text-white text-xs sm:text-sm font-bold truncate">
                                 {user.userName || '接続中...'}
                             </div>
-                            {/* ステータスアイコン - 右上に移動 */}
                             <div className="absolute top-2 right-2 flex gap-1">
                                 {user.isAudioOff && (
                                     <div className="bg-red-500 p-1 rounded-full">
@@ -1193,10 +1144,24 @@ export default function VideoRoom({ roomId, userId }) {
                 ))}
             </div>
 
-            {/* コントロールパネル - 背景ボタンを削除 */}
+            {/* ★追加: 字幕表示エリア */}
+            <div className="fixed bottom-24 left-0 right-0 pointer-events-none flex flex-col items-center justify-end p-4 space-y-2 z-30" style={{ maxHeight: '30vh' }}>
+                {subtitles.map((sub) => (
+                    <div 
+                        key={sub.id} 
+                        className={`
+                            max-w-2xl bg-black/70 text-white px-4 py-2 rounded-xl backdrop-blur-md text-lg font-medium text-center transition-all duration-300 animate-fadeIn
+                            ${sub.isLocal ? 'border-l-4 border-blue-500' : 'border-l-4 border-green-500'}
+                        `}
+                    >
+                        <div className="text-xs opacity-70 mb-1 text-left">{sub.speakerName}</div>
+                        <div className="whitespace-pre-wrap">{sub.text}</div>
+                    </div>
+                ))}
+            </div>
+
             <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-5xl px-2">
                 <div className="flex justify-center items-center gap-1 sm:gap-2 bg-white/95 backdrop-blur-sm px-2 sm:px-3 py-2 sm:py-3 rounded-2xl shadow-xl">
-                    {/* カメラボタン */}
                     <div className="flex flex-col items-center">
                         <button
                             onClick={toggleCamera}
@@ -1217,7 +1182,6 @@ export default function VideoRoom({ roomId, userId }) {
                         </span>
                     </div>
 
-                    {/* マイクボタン */}
                     <div className="flex flex-col items-center">
                         <button
                             onClick={toggleAudio}
@@ -1238,7 +1202,6 @@ export default function VideoRoom({ roomId, userId }) {
                         </span>
                     </div>
 
-                    {/* 録音ボタン */}
                     <div className="flex flex-col items-center">
                         <button
                             onClick={toggleRecording}
@@ -1261,21 +1224,37 @@ export default function VideoRoom({ roomId, userId }) {
                         </span>
                     </div>
 
+                    {/* ★追加: 翻訳ボタン */}
                     <div className="flex flex-col items-center">
-                    <button
-                        onClick={goToMinutes} // ★ 3. 新しいヘルパー関数を呼び出し
-                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
-                    >
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                            />
-                        </svg>
-                    </button>
-                    <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
-                </div>
+                        <button
+                            onClick={toggleTranslation}
+                            className={`
+                                w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center 
+                                ${isTranslationOn ? 'bg-indigo-600' : 'bg-gray-400'} 
+                                text-white shadow-lg transition-all duration-200
+                            `}
+                        >
+                            <span className="text-lg font-bold">A</span>
+                        </button>
+                        <span className="text-xs font-bold text-gray-700 mt-1">
+                            翻訳{isTranslationOn ? 'ON' : 'OFF'}
+                        </span>
+                    </div>
 
-                    {/* 退出ボタン */}
+                    <div className="flex flex-col items-center">
+                        <button
+                            onClick={goToMinutes}
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700"
+                        >
+                            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
+                            </svg>
+                        </button>
+                        <span className="text-xs font-bold text-gray-700 mt-1">議事録</span>
+                    </div>
+
                     <div className="flex flex-col items-center">
                         <button
                             onClick={() => {
@@ -1294,7 +1273,6 @@ export default function VideoRoom({ roomId, userId }) {
                         <span className="text-xs font-bold text-red-600 mt-1">退出</span>
                     </div>
 
-                    {/* クイズボタン */}
                     <div className="flex flex-col items-center">
                         <button
                             onClick={() => window.open(`/yoriai/quiz/${roomId}?user=${userId}`, '_blank')}
@@ -1311,7 +1289,6 @@ export default function VideoRoom({ roomId, userId }) {
                 </div>
             </div>
 
-            {/* 録音機能コンポーネント */}
             <div className="hidden">
                 <MeetingRecorder
                     ref={meetingRecorderRef}
@@ -1321,6 +1298,7 @@ export default function VideoRoom({ roomId, userId }) {
                     isAudioOn={isAudioOn}
                     localStream={localStreamRef.current} 
                     socketRef={socketRef}
+                    onLocalSpeech={handleLocalSpeech} // ★ 追加: 自分の発言ハンドラを渡す
                 />
             </div>
         </div>

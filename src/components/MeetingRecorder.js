@@ -1,30 +1,25 @@
-// src/components/MeetingRecorder.js
-
 'use client';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
-// AudioWorkletプロセッサのコードを文字列として定義
 const keepAliveProcessor = `
   class KeepAliveProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
-      // This function being called keeps the microphone active.
       return true;
     }
   }
   registerProcessor('keep-alive-processor', KeepAliveProcessor);
 `;
 
-const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef }, ref) => {
-    // State
+// ★変更点1: propsに onLocalSpeech を追加
+const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef, onLocalSpeech }, ref) => {
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
     const [error, setError] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [isInitiator, setIsInitiator] = useState(false); // ★ 修正：setIsInitiatorを定義
+    const [isInitiator, setIsInitiator] = useState(false);
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
-    // Refs
     const recognitionRef = useRef(null);
     const meetingIdRef = useRef(null);
     const processingRef = useRef(false);
@@ -32,7 +27,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const isRecordingRef = useRef(false);
     const manualStopRef = useRef(false);
     
-    // Web Audio API Refs
     const audioContextRef = useRef(null);
     const mediaStreamSourceRef = useRef(null);
     const audioWorkletNodeRef = useRef(null);
@@ -44,7 +38,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
 
     const resumeAudioContext = useCallback(async () => {
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-            logDebug('Resuming AudioContext...');
             await audioContextRef.current.resume();
         }
     }, []);
@@ -141,15 +134,22 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         if (!isRecordingRef.current) return;
         for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal && event.results[i][0].transcript.trim()) {
-                const transcript = event.results[i][0].transcript.trim();
-                logDebug(`Final result: ${transcript}`);
+                const transcriptText = event.results[i][0].transcript.trim();
+                logDebug(`Final result: ${transcriptText}`);
+                
                 if (socketRef.current) {
-                    socketRef.current.emit('speech-data', { content: transcript, userId, userName });
+                    socketRef.current.emit('speech-data', { content: transcriptText, userId, userName });
                 }
-                saveSpeechToQueue(transcript, userId, userName);
+                // 自分の発言は保存する
+                saveSpeechToQueue(transcriptText, userId, userName);
+
+                // ★変更点2: 自分の発言を親コンポーネント（字幕用）に通知
+                if (onLocalSpeech) {
+                    onLocalSpeech(transcriptText);
+                }
             }
         }
-    }, [userId, userName, saveSpeechToQueue, socketRef]);
+    }, [userId, userName, saveSpeechToQueue, socketRef, onLocalSpeech]);
 
     const initializeSpeechRecognition = useCallback(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -337,8 +337,8 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
             if (isRecordingRef.current) {
-                // 修正: 他人の発言を受信した際は、DB保存を行わず、画面表示（トランスクリプト）の更新のみを行う
-                // saveSpeechToQueue(content, speakerId, speakerName); // <-- この行を削除またはコメントアウト
+                // ★変更点3: 重複保存の修正
+                // ここにあった saveSpeechToQueue(content, speakerId, speakerName); を削除しました
                 
                 setTranscript(prev => [...prev, { 
                     id: Date.now().toString(), 
@@ -362,6 +362,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             }
         };
     }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
+
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="bg-blue-600 p-6">
