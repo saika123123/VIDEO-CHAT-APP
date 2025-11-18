@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import MeetingRecorder from './MeetingRecorder';
 
+// WebRTC設定
 const configuration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -134,7 +135,9 @@ const getMediaStream = async (userName) => {
     return { stream, hasVideo };
 };
 
+
 export default function VideoRoom({ roomId, userId }) {
+    // State管理
     const [users, setUsers] = useState([]);
     const [userName, setUserName] = useState('');
     const [background, setBackground] = useState('/yoriai/backgrounds/default.jpg');
@@ -151,10 +154,11 @@ export default function VideoRoom({ roomId, userId }) {
     const [recordingInitiator, setRecordingInitiator] = useState(null);
     const [recordingErrorMessage, setRecordingErrorMessage] = useState(null);
 
-    // ★追加: 翻訳機能用のState
-    const [isTranslationOn, setIsTranslationOn] = useState(false);
+    // ★ 翻訳機能用のState
+    const [translationMode, setTranslationMode] = useState('OFF'); // 'OFF', 'JA_TO_EN', 'EN_TO_JA'
     const [subtitles, setSubtitles] = useState([]);
 
+    // Refs
     const socketRef = useRef();
     const peersRef = useRef({});
     const localStreamRef = useRef();
@@ -166,16 +170,15 @@ export default function VideoRoom({ roomId, userId }) {
     const meetingRecorderRef = useRef(null);
     const mountedRef = useRef(true);
     const hasInitialized = useRef(false);
-    // ★追加: 翻訳設定のRef (イベントリスナー内での参照用)
-    const isTranslationOnRef = useRef(false);
+    
+    // ★ 翻訳設定のRef
+    const translationModeRef = useRef('OFF');
 
     const toggleRecording = async () => {
         if (!isAudioOn) {
             alert('録音を開始するにはマイクをオンにしてください');
             return;
         }
-
-        console.log("現在の録音状態:", isRecording);
 
         try {
             setRecordingErrorMessage(null);
@@ -202,39 +205,60 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // ★追加: 翻訳機能のON/OFF切り替え
-    const toggleTranslation = () => {
-        setIsTranslationOn(prev => {
-            const newValue = !prev;
-            isTranslationOnRef.current = newValue;
-            if (!newValue) setSubtitles([]); // OFFにした時は字幕をクリア
-            return newValue;
+    // ★ 翻訳モードの切り替え
+    const toggleTranslationMode = () => {
+        setTranslationMode(prev => {
+            let nextMode;
+            if (prev === 'OFF') nextMode = 'JA_TO_EN';
+            else if (prev === 'JA_TO_EN') nextMode = 'EN_TO_JA';
+            else nextMode = 'OFF';
+            
+            translationModeRef.current = nextMode;
+            
+            if (nextMode === 'OFF') setSubtitles([]);
+            return nextMode;
         });
     };
 
-    // ★追加: 字幕生成処理
+    // ★ 現在のモードに応じた設定を取得
+    const getRecognitionConfig = () => {
+        switch (translationMode) {
+            case 'EN_TO_JA':
+                return { lang: 'en-US', label: '英→日' };
+            case 'JA_TO_EN':
+                return { lang: 'ja-JP', label: '日→英' };
+            default:
+                return { lang: 'ja-JP', label: 'OFF' };
+        }
+    };
+    
+    const currentConfig = getRecognitionConfig();
+
+    // ★ 字幕追加と翻訳処理
     const addSubtitle = async (text, speakerName, isLocal = false) => {
-        if (!isTranslationOnRef.current) return;
+        const mode = translationModeRef.current;
+        if (mode === 'OFF') return;
+
+        // モードに応じた翻訳先言語を設定
+        const targetLang = mode === 'EN_TO_JA' ? 'ja' : 'en';
 
         const id = Date.now();
-        // 翻訳中として原文を表示
         setSubtitles(prev => [...prev, { id, text, speakerName, isLocal, isTranslating: true }]);
 
         try {
-            // 翻訳API呼び出し
             const response = await fetch('/yoriai/api/translate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, targetLang: 'en' })
+                body: JSON.stringify({ text, targetLang })
             });
             
             const data = await response.json();
             
             if (data.translatedText) {
-                // 翻訳結果で字幕を更新
+                const langLabel = targetLang === 'en' ? 'EN' : 'JP';
                 setSubtitles(prev => prev.map(sub => 
                     sub.id === id 
-                        ? { ...sub, text: `${text}\n(EN: ${data.translatedText})`, isTranslating: false } 
+                        ? { ...sub, text: `${text}\n(${langLabel}: ${data.translatedText})`, isTranslating: false } 
                         : sub
                 ));
             }
@@ -242,13 +266,11 @@ export default function VideoRoom({ roomId, userId }) {
             console.error('Translation failed:', error);
         }
 
-        // 10秒後に字幕を消す
         setTimeout(() => {
             setSubtitles(prev => prev.filter(sub => sub.id !== id));
         }, 10000);
     };
 
-    // ★追加: 自分の発言時のハンドラ (MeetingRecorderから呼ばれる)
     const handleLocalSpeech = (content) => {
         addSubtitle(content, userName, true);
     };
@@ -261,7 +283,6 @@ export default function VideoRoom({ roomId, userId }) {
     const updateDebugInfo = (info) => {
         setDebugInfo(prev => {
             const newInfo = { ...prev, ...info, timestamp: new Date().toISOString() };
-            console.log('Debug info updated:', newInfo);
             return newInfo;
         });
     };
@@ -318,7 +339,6 @@ export default function VideoRoom({ roomId, userId }) {
                 const candidate = iceCandidatesQueue.shift();
                 try {
                     await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                    console.log('Successfully added queued ICE candidate');
                 } catch (err) {
                     console.error('Error adding queued ICE candidate:', err);
                     updateDebugInfo({ iceCandidateError: err.message });
@@ -340,12 +360,10 @@ export default function VideoRoom({ roomId, userId }) {
 
                 reconnectionAttemptsRef.current[targetSocketId] = attempts + 1;
                 const delay = calculateReconnectionDelay(attempts);
-                console.log(`Attempting reconnection ${attempts + 1}/${RECONNECTION_CONFIG.maxRetries} after ${delay}ms`);
-
+                
                 await new Promise(resolve => setTimeout(resolve, delay));
 
                 if (peerConnection.connectionState !== 'closed') {
-                    console.log('Creating restart offer');
                     const offer = await peerConnection.createOffer({ iceRestart: true });
                     await peerConnection.setLocalDescription(offer);
                     socketRef.current?.emit('offer', {
@@ -363,7 +381,6 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         peerConnection.onconnectionstatechange = () => {
-            console.log(`Connection state changed for ${targetSocketId}:`, peerConnection.connectionState);
             updateDebugInfo({ [`peerState_${targetSocketId}`]: peerConnection.connectionState });
 
             switch (peerConnection.connectionState) {
@@ -374,7 +391,6 @@ export default function VideoRoom({ roomId, userId }) {
                     break;
                 case 'failed':
                 case 'disconnected':
-                    console.log(`Connection ${peerConnection.connectionState} for peer ${targetSocketId}`);
                     setConnectionStatus('reconnecting');
                     restartConnection();
                     break;
@@ -386,23 +402,19 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         peerConnection.oniceconnectionstatechange = () => {
-            console.log(`ICE connection state for ${targetSocketId}:`, peerConnection.iceConnectionState);
             updateDebugInfo({ [`iceState_${targetSocketId}`]: peerConnection.iceConnectionState });
 
             if (peerConnection.iceConnectionState === 'failed') {
-                console.log('ICE connection failed, attempting restart...');
                 restartConnection();
             }
         };
 
         peerConnection.onsignalingstatechange = () => {
-            console.log(`Signaling state for ${targetSocketId}:`, peerConnection.signalingState);
             updateDebugInfo({ [`signalingState_${targetSocketId}`]: peerConnection.signalingState });
         };
 
         peerConnection.onicecandidate = ({ candidate }) => {
             if (candidate && socketRef.current?.connected) {
-                console.log('Sending ICE candidate to', targetSocketId);
                 socketRef.current.emit('ice-candidate', {
                     candidate,
                     to: targetSocketId
@@ -411,10 +423,8 @@ export default function VideoRoom({ roomId, userId }) {
         };
 
         peerConnection.ontrack = (event) => {
-            console.log('Received remote track:', event);
             const remoteStream = event.streams[0];
             if (!remoteStream) {
-                console.warn('No remote stream available in track event');
                 return;
             }
 
@@ -445,7 +455,6 @@ export default function VideoRoom({ roomId, userId }) {
                 if (makingOfferRef.current) return;
                 makingOfferRef.current = true;
 
-                console.log('Negotiation needed, creating offer...');
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
 
@@ -480,38 +489,24 @@ export default function VideoRoom({ roomId, userId }) {
             },
             setLocalDescription: async (desc) => {
                 try {
-                    if (!desc || !desc.type) {
-                        throw new Error('Invalid session description: missing type');
-                    }
+                    if (!desc || !desc.type) throw new Error('Invalid session description');
 
                     const signalingState = peerConnection.signalingState;
-                    console.log(`Current signaling state before setLocalDescription: ${signalingState}`);
-
                     const isValidState = (desc.type === 'offer' &&
                         (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
                         (desc.type === 'answer' &&
                             (signalingState === 'have-remote-offer' || signalingState === 'have-local-pranswer'));
 
-                    if (!isValidState) {
-                        console.warn(`Invalid state for setLocalDescription: ${signalingState}, type: ${desc.type}`);
-                        return;
-                    }
+                    if (!isValidState) return;
 
                     await peerConnection.setLocalDescription(desc);
-                    console.log(`Successfully set local description, new state: ${peerConnection.signalingState}`);
                 } catch (err) {
                     console.error('Error setting local description:', err);
-                    updateDebugInfo({
-                        localDescError: err.message,
-                        signalingState: peerConnection.signalingState,
-                        descType: desc?.type
-                    });
-
+                    
                     if (err.name === 'InvalidStateError') {
                         try {
                             if (peerConnection.signalingState !== 'stable') {
                                 await peerConnection.setLocalDescription({ type: "rollback" });
-                                console.log('Successfully rolled back signaling state');
                             }
                             await peerConnection.setLocalDescription(desc);
                         } catch (recoveryErr) {
@@ -522,33 +517,20 @@ export default function VideoRoom({ roomId, userId }) {
             },
             setRemoteDescription: async (desc) => {
                 try {
-                    if (!desc || !desc.type) {
-                        throw new Error('Invalid session description: missing type');
-                    }
+                    if (!desc || !desc.type) throw new Error('Invalid session description');
 
                     const signalingState = peerConnection.signalingState;
-                    console.log(`Current signaling state before setRemoteDescription: ${signalingState}`);
-
                     const isValidState = (desc.type === 'offer' &&
                         (signalingState === 'stable' || signalingState === 'have-local-offer')) ||
                         (desc.type === 'answer' &&
                             (signalingState === 'have-local-offer' || signalingState === 'have-remote-pranswer'));
 
-                    if (!isValidState) {
-                        console.warn(`Invalid state for setRemoteDescription: ${signalingState}, type: ${desc.type}`);
-                        return;
-                    }
+                    if (!isValidState) return;
 
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(desc));
                     await processIceCandidateQueue();
-                    console.log(`Successfully set remote description, new state: ${peerConnection.signalingState}`);
                 } catch (err) {
                     console.error('Error setting remote description:', err);
-                    updateDebugInfo({
-                        remoteDescError: err.message,
-                        signalingState: peerConnection.signalingState,
-                        descType: desc?.type
-                    });
                 }
             },
             createAnswer: async () => {
@@ -558,7 +540,6 @@ export default function VideoRoom({ roomId, userId }) {
                     return answer;
                 } catch (err) {
                     console.error('Error creating answer:', err);
-                    updateDebugInfo({ answerError: err.message });
                     throw err;
                 }
             },
@@ -566,14 +547,11 @@ export default function VideoRoom({ roomId, userId }) {
                 try {
                     if (peerConnection.remoteDescription) {
                         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                        console.log('Successfully added ICE candidate');
                     } else {
-                        console.log('Queueing ICE candidate');
                         iceCandidatesQueue.push(candidate);
                     }
                 } catch (err) {
                     console.error('Error handling ICE candidate:', err);
-                    updateDebugInfo({ iceCandidateError: err.message });
                 }
             }
         };
@@ -586,7 +564,6 @@ export default function VideoRoom({ roomId, userId }) {
                 peer.peerConnection.ontrack = null;
                 peer.peerConnection.onicecandidate = null;
                 peer.peerConnection.oniceconnectionstatechange = null;
-                peer.peerConnection.onicegatheringstatechange = null;
                 peer.peerConnection.onsignalingstatechange = null;
                 peer.peerConnection.onconnectionstatechange = null;
                 peer.peerConnection.onnegotiationneeded = null;
@@ -618,12 +595,9 @@ export default function VideoRoom({ roomId, userId }) {
         });
 
         socketRef.current.on('connect', () => {
-            console.log('Connected to signaling server via:', socketRef.current.io.engine.transport.name);
+            console.log('Connected to signaling server');
             setConnectionStatus('connected');
-            updateDebugInfo({
-                socketConnected: true,
-                transport: socketRef.current.io.engine.transport.name
-            });
+            updateDebugInfo({ socketConnected: true });
         });
 
         socketRef.current.on('connect_error', (error) => {
@@ -633,7 +607,6 @@ export default function VideoRoom({ roomId, userId }) {
         });
 
         socketRef.current.on('users', (newUsers) => {
-            console.log('Received users update:', newUsers);
             updateDebugInfo({ connectedUsers: newUsers.length });
 
             setUsers(prevUsers => {
@@ -656,15 +629,13 @@ export default function VideoRoom({ roomId, userId }) {
             });
         });
 
-        // ★追加: 他ユーザーの発言を受信して字幕を表示
+        // ★ 他ユーザーの発言を受信
         socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
-            console.log(`Received speech from ${speakerName}: ${content}`);
             addSubtitle(content, speakerName, false);
         });
 
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {
             try {
-                console.log(`Received ${isRestart ? 'restart' : ''} offer from:`, from);
                 const peer = peersRef.current[from] || createPeer(from, false);
                 peersRef.current[from] = peer;
 
@@ -675,10 +646,7 @@ export default function VideoRoom({ roomId, userId }) {
                 const offerCollision = !readyForOffer;
                 const ignoreOffer = !isRestart && offerCollision && socketRef.current.id < from;
 
-                if (ignoreOffer) {
-                    console.log('Ignoring colliding offer');
-                    return;
-                }
+                if (ignoreOffer) return;
 
                 isSettingRemoteAnswerRef.current = true;
                 await peer.setRemoteDescription(offer);
@@ -693,26 +661,19 @@ export default function VideoRoom({ roomId, userId }) {
                 });
             } catch (err) {
                 console.error('Error handling offer:', err);
-                updateDebugInfo({ offerHandlingError: err.message });
             }
         });
 
         socketRef.current.on('answer', async ({ answer, from }) => {
             try {
                 const peer = peersRef.current[from];
-                if (!peer) {
-                    console.warn('No peer connection found for answer');
-                    return;
-                }
+                if (!peer) return;
 
                 if (peer.peerConnection.signalingState === "have-local-offer") {
                     await peer.setRemoteDescription(answer);
-                } else {
-                    console.warn('Unexpected signaling state for answer:', peer.peerConnection.signalingState);
                 }
             } catch (err) {
                 console.error('Error handling answer:', err);
-                updateDebugInfo({ answerHandlingError: err.message });
             }
         });
 
@@ -724,12 +685,10 @@ export default function VideoRoom({ roomId, userId }) {
                 }
             } catch (err) {
                 console.error('Error adding ICE candidate:', err);
-                updateDebugInfo({ iceCandidateError: err.message });
             }
         });
 
         socketRef.current.on('user-disconnected', (disconnectedUserId) => {
-            console.log('User disconnected:', disconnectedUserId);
             setUsers(prevUsers => prevUsers.filter(user => user.userId !== disconnectedUserId));
 
             Object.entries(peersRef.current).forEach(([socketId, peer]) => {
@@ -737,12 +696,9 @@ export default function VideoRoom({ roomId, userId }) {
                     cleanupPeerConnection(socketId);
                 }
             });
-
-            updateDebugInfo({ lastDisconnected: disconnectedUserId });
         });
 
         socketRef.current.on('disconnect', () => {
-            console.log('Disconnected from signaling server');
             setConnectionStatus('disconnected');
             updateDebugInfo({ socketDisconnected: true });
         });
@@ -829,7 +785,6 @@ export default function VideoRoom({ roomId, userId }) {
             if (isRecording) {
                 try {
                     await meetingRecorderRef.current?.stopRecording();
-                    console.log("退出前に録音を停止しました");
                 } catch (error) {
                     console.error("退出時の録音停止エラー:", error);
                 }
@@ -873,7 +828,6 @@ export default function VideoRoom({ roomId, userId }) {
                     return;
                 }
 
-                console.log('Local stream obtained:', stream);
                 localStreamRef.current = stream;
                 setIsCameraOn(hasVideo);
                 setIsConnecting(false);
@@ -918,20 +872,17 @@ export default function VideoRoom({ roomId, userId }) {
         if (!socketRef.current) return;
 
         const handleRecordingStarted = ({ meetingId, initiatorId, initiatorName }) => {
-            console.log(`Recording started by ${initiatorName || initiatorId}`);
             setIsRecording(true);
             setRecordingInitiator(initiatorName || initiatorId);
             setRecordingErrorMessage(null);
         };
 
         const handleRecordingStopped = ({ meetingId, initiatorId }) => {
-            console.log(`Recording stopped by ${initiatorId}`);
             setIsRecording(false);
             setRecordingInitiator(null);
         };
 
         const handleRecordingInitiatorLeft = ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
-            console.log(`Recording initiator ${formerInitiatorName} left, but recording continues`);
             setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
         };
 
@@ -1144,7 +1095,7 @@ export default function VideoRoom({ roomId, userId }) {
                 ))}
             </div>
 
-            {/* ★追加: 字幕表示エリア */}
+            {/* 字幕表示エリア */}
             <div className="fixed bottom-24 left-0 right-0 pointer-events-none flex flex-col items-center justify-end p-4 space-y-2 z-30" style={{ maxHeight: '30vh' }}>
                 {subtitles.map((sub) => (
                     <div 
@@ -1224,20 +1175,23 @@ export default function VideoRoom({ roomId, userId }) {
                         </span>
                     </div>
 
-                    {/* ★追加: 翻訳ボタン */}
+                    {/* ★ 翻訳ボタン */}
                     <div className="flex flex-col items-center">
                         <button
-                            onClick={toggleTranslation}
+                            onClick={toggleTranslationMode}
                             className={`
                                 w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center 
-                                ${isTranslationOn ? 'bg-indigo-600' : 'bg-gray-400'} 
+                                ${translationMode !== 'OFF' ? 'bg-indigo-600' : 'bg-gray-400'} 
                                 text-white shadow-lg transition-all duration-200
                             `}
                         >
-                            <span className="text-lg font-bold">A</span>
+                            <span className="text-xs sm:text-sm font-bold">
+                                {translationMode === 'OFF' ? 'A' : 
+                                 translationMode === 'JA_TO_EN' ? '日英' : '英日'}
+                            </span>
                         </button>
                         <span className="text-xs font-bold text-gray-700 mt-1">
-                            翻訳{isTranslationOn ? 'ON' : 'OFF'}
+                            {translationMode === 'OFF' ? '翻訳OFF' : currentConfig.label}
                         </span>
                     </div>
 
@@ -1298,7 +1252,8 @@ export default function VideoRoom({ roomId, userId }) {
                     isAudioOn={isAudioOn}
                     localStream={localStreamRef.current} 
                     socketRef={socketRef}
-                    onLocalSpeech={handleLocalSpeech} // ★ 追加: 自分の発言ハンドラを渡す
+                    onLocalSpeech={handleLocalSpeech}
+                    recognitionLang={currentConfig.lang} // ★ 現在のモードに応じた言語を渡す
                 />
             </div>
         </div>

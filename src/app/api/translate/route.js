@@ -9,7 +9,7 @@ export async function POST(request) {
         }
 
         // Google Translate API (GTX - 非公式) を使用
-        // 注意: 商用利用や大規模利用の場合は、正式なGoogle Cloud Translation APIまたはDeepL APIを使用してください。
+        // 注意: 本番環境や商用利用の場合は、公式のGoogle Cloud Translation APIやDeepL APIを使用してください。
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
         
         const response = await fetch(url);
@@ -20,7 +20,6 @@ export async function POST(request) {
         const data = await response.json();
         
         // レスポンス構造から翻訳テキストを結合
-        // data[0]配列内の各要素の0番目に翻訳テキストが含まれる
         const translatedText = data[0] ? data[0].map(item => item[0]).join('') : '';
         
         return NextResponse.json({ 

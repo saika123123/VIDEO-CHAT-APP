@@ -1,17 +1,19 @@
 'use client';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
+// AudioWorkletプロセッサのコードを文字列として定義
 const keepAliveProcessor = `
   class KeepAliveProcessor extends AudioWorkletProcessor {
     process(inputs, outputs, parameters) {
+      // This function being called keeps the microphone active.
       return true;
     }
   }
   registerProcessor('keep-alive-processor', KeepAliveProcessor);
 `;
 
-// ★変更点1: propsに onLocalSpeech を追加
-const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef, onLocalSpeech }, ref) => {
+const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef, onLocalSpeech, recognitionLang = 'ja-JP' }, ref) => {
+    // State
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
     const [transcript, setTranscript] = useState([]);
@@ -20,6 +22,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const [isInitiator, setIsInitiator] = useState(false);
     const [recordingInitiator, setRecordingInitiator] = useState(null);
 
+    // Refs
     const recognitionRef = useRef(null);
     const meetingIdRef = useRef(null);
     const processingRef = useRef(false);
@@ -27,6 +30,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const isRecordingRef = useRef(false);
     const manualStopRef = useRef(false);
     
+    // Web Audio API Refs
     const audioContextRef = useRef(null);
     const mediaStreamSourceRef = useRef(null);
     const audioWorkletNodeRef = useRef(null);
@@ -38,6 +42,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
 
     const resumeAudioContext = useCallback(async () => {
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+            logDebug('Resuming AudioContext...');
             await audioContextRef.current.resume();
         }
     }, []);
@@ -140,10 +145,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 if (socketRef.current) {
                     socketRef.current.emit('speech-data', { content: transcriptText, userId, userName });
                 }
+                
                 // 自分の発言は保存する
                 saveSpeechToQueue(transcriptText, userId, userName);
-
-                // ★変更点2: 自分の発言を親コンポーネント（字幕用）に通知
+                
+                // ★ 自分の発言を親コンポーネント（字幕用）に通知
                 if (onLocalSpeech) {
                     onLocalSpeech(transcriptText);
                 }
@@ -158,9 +164,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = 'ja-JP';
+        
+        // ★ 言語設定を適用
+        recognition.lang = recognitionLang;
 
-        recognition.onstart = () => logDebug('Speech recognition started');
+        recognition.onstart = () => logDebug(`Speech recognition started (${recognitionLang})`);
         
         recognition.onend = () => {
             logDebug('Speech recognition ended.');
@@ -179,12 +187,29 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 setError('マイクへのアクセスに問題があります。設定を確認してください。');
                 stopRecording(true);
             } else {
-                 setError(`音声認識エラー: ${event.error}`);
+                 // 軽微なエラーは無視して継続
+                 // setError(`音声認識エラー: ${event.error}`);
             }
         };
         recognition.onresult = handleSpeechResult;
         recognitionRef.current = recognition;
-    }, [handleSpeechResult]);
+    }, [handleSpeechResult, recognitionLang]);
+
+    // ★ 言語設定が変更されたら音声認識を再起動
+    useEffect(() => {
+        if (recognitionRef.current && recognitionRef.current.lang !== recognitionLang) {
+            logDebug(`Language changed to ${recognitionLang}. Restarting recognition...`);
+            
+            if (isRecordingRef.current) {
+                recognitionRef.current.stop();
+                recognitionRef.current.onend = null; // 既存のハンドラを無効化
+                initializeSpeechRecognition(); // 新しい設定で初期化
+                recognitionRef.current.start();
+            } else {
+                recognitionRef.current = null; 
+            }
+        }
+    }, [recognitionLang, initializeSpeechRecognition]);
 
     const startRecording = async () => {
         logDebug('Attempting to start recording...');
@@ -337,9 +362,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
             if (isRecordingRef.current) {
-                // ★変更点3: 重複保存の修正
-                // ここにあった saveSpeechToQueue(content, speakerId, speakerName); を削除しました
-                
+                // 重複保存防止のため、ここでは保存せず画面表示の更新のみ行う
                 setTranscript(prev => [...prev, { 
                     id: Date.now().toString(), 
                     userId: speakerId, 
