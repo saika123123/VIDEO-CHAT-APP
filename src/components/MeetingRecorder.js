@@ -337,8 +337,16 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
             if (isRecordingRef.current) {
-                saveSpeechToQueue(content, speakerId, speakerName);
-                setTranscript(prev => [...prev, { id: Date.now().toString(), userId: speakerId, userName: speakerName, content, timestamp: new Date().toISOString() }]);
+                // 修正: 他人の発言を受信した際は、DB保存を行わず、画面表示（トランスクリプト）の更新のみを行う
+                // saveSpeechToQueue(content, speakerId, speakerName); // <-- この行を削除またはコメントアウト
+                
+                setTranscript(prev => [...prev, { 
+                    id: Date.now().toString(), 
+                    userId: speakerId, 
+                    userName: speakerName, 
+                    content, 
+                    timestamp: new Date().toISOString() 
+                }]);
             }
         };
 
@@ -354,7 +362,6 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             }
         };
     }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
-
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="bg-blue-600 p-6">
