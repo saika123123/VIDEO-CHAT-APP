@@ -27,6 +27,8 @@ const io = new Server(server, {
 const rooms = new Map();
 // ビデオ通話用：アクティブな録音セッションを管理するMap
 const activeRecordings = new Map();
+// ★ ビデオ通話用：ルームごとの設定（翻訳モードなど）を管理するMap
+const roomStates = new Map();
 
 // クイズ用：クイズルーム管理用のMap
 const quizRooms = new Map();
@@ -281,7 +283,7 @@ io.on('connection', (socket) => {
         return; // クイズ接続の場合はここで処理終了
     }
 
-    // ビデオ通話用の処理（既存のコード）
+    // --- ビデオ通話用の処理 ---
     console.log(`Video chat user ${userName} (${userId}) joining room ${roomId}`);
 
     // ルームに参加
@@ -290,6 +292,11 @@ io.on('connection', (socket) => {
     // ルームが存在しない場合は新規作成
     if (!rooms.has(roomId)) {
         rooms.set(roomId, new Map());
+    }
+
+    // ★ ルーム設定の初期化（翻訳モードなど）
+    if (!roomStates.has(roomId)) {
+        roomStates.set(roomId, { translationMode: 'OFF' });
     }
 
     // ユーザー情報をルームに追加
@@ -301,6 +308,14 @@ io.on('connection', (socket) => {
 
     // 現在のルーム状態をログ出力
     logRoomState(roomId);
+
+    // ★ 新しく入ってきた人に、現在の翻訳モードを教える（途中参加者への同期）
+    const currentState = roomStates.get(roomId);
+    if (currentState && currentState.translationMode !== 'OFF') {
+        console.log(`Syncing translation mode ${currentState.translationMode} to new user ${userName}`);
+        // 接続してきた本人だけに送信
+        socket.emit('translation-update', currentState.translationMode);
+    }
 
     // アクティブな録音があれば通知
     if (activeRecordings.has(roomId)) {
@@ -349,7 +364,7 @@ io.on('connection', (socket) => {
         console.error('Socket error:', error);
     });
 
-    // ★★★ 音声データの中継 ★★★
+    // 音声データの中継
     socket.on('speech-data', (data) => {
         console.log(`Received speech data from ${data.userName} (${data.userId}): "${data.content.substring(0, 20)}..."`);
 
@@ -399,9 +414,17 @@ io.on('connection', (socket) => {
         });
     });
 
-    // ★ 翻訳モード変更の同期（追加部分）
+    // ★ 翻訳モード変更の同期と保存（修正）
     socket.on('translation-change', ({ roomId, mode }) => {
         console.log(`Translation mode changed in room ${roomId} to ${mode}`);
+        
+        // サーバー側の状態を更新
+        if (roomStates.has(roomId)) {
+            roomStates.get(roomId).translationMode = mode;
+        } else {
+            roomStates.set(roomId, { translationMode: mode });
+        }
+
         // 送信者以外のルーム内メンバー全員に新しいモードを通知
         socket.to(roomId).emit('translation-update', mode);
     });
@@ -441,15 +464,13 @@ io.on('connection', (socket) => {
                 });
             }
 
-            // ルームが空になった場合は削除と録音データのクリーンアップ
+            // ルームが空になった場合は削除とクリーンアップ
             if (rooms.get(roomId).size === 0) {
                 console.log(`Removing empty room: ${roomId}`);
                 rooms.delete(roomId);
-
-                if (activeRecordings.has(roomId)) {
-                    console.log(`Cleaning up recording for empty room: ${roomId}`);
-                    activeRecordings.delete(roomId);
-                }
+                activeRecordings.delete(roomId);
+                // ★ 設定も削除
+                roomStates.delete(roomId);
             }
         }
     });
@@ -574,6 +595,7 @@ setInterval(() => {
             console.log(`Cleaning up empty room: ${roomId}`);
             rooms.delete(roomId);
             activeRecordings.delete(roomId);
+            roomStates.delete(roomId); // ★ 設定も削除
         }
     });
 
@@ -616,7 +638,7 @@ setInterval(() => {
         }
     });
 
-    console.log(`Active rooms: ${rooms.size}, Active recordings: ${activeRecordings.size}, Active quiz rooms: ${quizRooms.size}`);
+    console.log(`Active rooms: ${rooms.size}, Active recordings: ${activeRecordings.size}, Active quiz rooms: ${quizRooms.size}, Room settings: ${roomStates.size}`);
 }, 60000); // 1分ごとにチェック
 
 // エラーハンドリング
