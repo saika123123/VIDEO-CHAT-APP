@@ -205,19 +205,24 @@ export default function VideoRoom({ roomId, userId }) {
         }
     };
 
-    // ★ 翻訳モードの切り替え
+    // ★ 翻訳モードの切り替え（同期機能追加）
     const toggleTranslationMode = () => {
-        setTranslationMode(prev => {
-            let nextMode;
-            if (prev === 'OFF') nextMode = 'JA_TO_EN';
-            else if (prev === 'JA_TO_EN') nextMode = 'EN_TO_JA';
-            else nextMode = 'OFF';
-            
-            translationModeRef.current = nextMode;
-            
-            if (nextMode === 'OFF') setSubtitles([]);
-            return nextMode;
-        });
+        // 次のモードを決定
+        let nextMode;
+        if (translationMode === 'OFF') nextMode = 'JA_TO_EN';
+        else if (translationMode === 'JA_TO_EN') nextMode = 'EN_TO_JA';
+        else nextMode = 'OFF';
+        
+        // 1. 自分の状態を更新
+        setTranslationMode(nextMode);
+        translationModeRef.current = nextMode;
+        
+        if (nextMode === 'OFF') setSubtitles([]);
+
+        // 2. サーバーを通じて他の参加者に通知
+        if (socketRef.current) {
+            socketRef.current.emit('translation-change', { roomId, mode: nextMode });
+        }
     };
 
     // ★ 現在のモードに応じた設定を取得
@@ -632,6 +637,18 @@ export default function VideoRoom({ roomId, userId }) {
         // ★ 他ユーザーの発言を受信
         socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
             addSubtitle(content, speakerName, false);
+        });
+
+        // ★ 他ユーザーが翻訳モードを変更した時の同期処理（追加部分）
+        socketRef.current.on('translation-update', (newMode) => {
+            console.log('Translation mode updated by remote user:', newMode);
+            setTranslationMode(newMode);
+            translationModeRef.current = newMode;
+            
+            // OFFになった場合は字幕をクリア
+            if (newMode === 'OFF') {
+                setSubtitles([]);
+            }
         });
 
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {

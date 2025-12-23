@@ -399,6 +399,13 @@ io.on('connection', (socket) => {
         });
     });
 
+    // ★ 翻訳モード変更の同期（追加部分）
+    socket.on('translation-change', ({ roomId, mode }) => {
+        console.log(`Translation mode changed in room ${roomId} to ${mode}`);
+        // 送信者以外のルーム内メンバー全員に新しいモードを通知
+        socket.to(roomId).emit('translation-update', mode);
+    });
+
     // ビデオ通話用切断時の処理
     socket.on('disconnect', () => {
         console.log(`Video chat client disconnected: ${userName} (${userId})`);
