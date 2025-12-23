@@ -186,13 +186,13 @@ export default function VideoRoom({ roomId, userId }) {
             if (isRecording) {
                 console.log("録音停止を開始します");
                 await meetingRecorderRef.current?.stopRecording();
-                setIsRecording(false);
+                setIsRecording(false); // 即座にUI反映（ソケットイベントで再確認される）
                 console.log("録音停止しました");
             } else {
                 console.log("録音開始を試みます");
                 const success = await meetingRecorderRef.current?.startRecording();
                 if (success) {
-                    setIsRecording(true);
+                    setIsRecording(true); // 即座にUI反映
                     console.log("録音開始しました");
                 } else {
                     console.error("録音開始に失敗しました");
@@ -221,6 +221,7 @@ export default function VideoRoom({ roomId, userId }) {
 
         // 2. サーバーを通じて他の参加者に通知
         if (socketRef.current) {
+            console.log('Emitting translation-change:', nextMode);
             socketRef.current.emit('translation-change', { roomId, mode: nextMode });
         }
     };
@@ -242,6 +243,8 @@ export default function VideoRoom({ roomId, userId }) {
     // ★ 字幕追加と翻訳処理
     const addSubtitle = async (text, speakerName, isLocal = false) => {
         const mode = translationModeRef.current;
+        console.log(`Adding subtitle. Mode: ${mode}, Text: ${text}`); // デバッグ用
+
         if (mode === 'OFF') return;
 
         // モードに応じた翻訳先言語を設定
@@ -587,6 +590,7 @@ export default function VideoRoom({ roomId, userId }) {
     };
 
     const initializeSocketConnection = (name) => {
+        // ソケット接続の初期化
         socketRef.current = io(window.location.origin, {
             path: '/yoriai/socket.io/',
             transports: ['polling', 'websocket'],
@@ -634,14 +638,40 @@ export default function VideoRoom({ roomId, userId }) {
             });
         });
 
-        // ★ 他ユーザーの発言を受信（修正箇所：このリスナーを確実にここで登録）
+        // ★★★ 録音機能の同期リスナー ★★★
+        // 録音開始イベント
+        socketRef.current.on('recording-started', ({ meetingId, initiatorId, initiatorName }) => {
+            console.log(`Received recording-started from ${initiatorName}`);
+            setIsRecording(true);
+            setRecordingInitiator(initiatorName || initiatorId);
+            setRecordingErrorMessage(null);
+        });
+
+        // 録音停止イベント
+        socketRef.current.on('recording-stopped', ({ meetingId, initiatorId }) => {
+            console.log('Received recording-stopped');
+            setIsRecording(false);
+            setRecordingInitiator(null);
+        });
+
+        // 録音開始者の退出イベント
+        socketRef.current.on('recording-initiator-left', ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
+            console.log('Recording initiator left');
+            setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
+        });
+
+        // ★★★ 翻訳・字幕機能のリスナー ★★★
+        // 発言データ受信（ここで字幕を追加）
         socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
+            console.log(`Received speech from ${speakerName}: ${content}`);
+            // 字幕を追加（翻訳するかどうかはaddSubtitle内で判定）
             addSubtitle(content, speakerName, false);
         });
 
-        // ★ 他ユーザーが翻訳モードを変更した時の同期処理（修正箇所：このリスナーを確実にここで登録）
+        // 翻訳モードの同期
         socketRef.current.on('translation-update', (newMode) => {
             console.log('Translation mode updated by remote user:', newMode);
+            // 状態を同期
             setTranslationMode(newMode);
             translationModeRef.current = newMode;
             
@@ -651,22 +681,7 @@ export default function VideoRoom({ roomId, userId }) {
             }
         });
 
-        // ★ 録音機能の同期リスナーをここに移動（修正箇所：useEffectから移動して確実に登録）
-        socketRef.current.on('recording-started', ({ meetingId, initiatorId, initiatorName }) => {
-            setIsRecording(true);
-            setRecordingInitiator(initiatorName || initiatorId);
-            setRecordingErrorMessage(null);
-        });
-
-        socketRef.current.on('recording-stopped', ({ meetingId, initiatorId }) => {
-            setIsRecording(false);
-            setRecordingInitiator(null);
-        });
-
-        socketRef.current.on('recording-initiator-left', ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
-            setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
-        });
-
+        // --- WebRTC シグナリング処理 ---
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {
             try {
                 const peer = peersRef.current[from] || createPeer(from, false);
@@ -865,6 +880,7 @@ export default function VideoRoom({ roomId, userId }) {
                 setIsCameraOn(hasVideo);
                 setIsConnecting(false);
 
+                // ソケット接続を開始
                 initializeSocketConnection(name);
             } catch (error) {
                 console.error('Initialization error:', error);
@@ -900,9 +916,6 @@ export default function VideoRoom({ roomId, userId }) {
             setTimeout(() => setShowCopied(false), 2000);
         });
     };
-
-    // ★ 修正: 独立していた録音用useEffectを削除し、initializeSocketConnectionに統合しました。
-    // これにより、録音開始・停止や参加者退出のイベントが確実にリッスンされるようになります。
 
     if (deviceError) {
         return (
@@ -1250,6 +1263,11 @@ export default function VideoRoom({ roomId, userId }) {
 
             <div className="hidden">
                 <MeetingRecorder
+                    // ★ 修正箇所：connectionStatusをkeyに指定することで、ソケット接続完了時に
+                    // コンポーネントを再マウントさせ、内部のuseEffectを確実に発火させます。
+                    // これにより、socketRef.currentがセットされた状態で初期化され、
+                    // 録音開始イベントのリスナーが正常に登録されます。
+                    key={connectionStatus === 'connected' ? 'connected' : 'initializing'}
                     ref={meetingRecorderRef}
                     roomId={roomId}
                     userId={userId}
@@ -1258,7 +1276,7 @@ export default function VideoRoom({ roomId, userId }) {
                     localStream={localStreamRef.current} 
                     socketRef={socketRef}
                     onLocalSpeech={handleLocalSpeech}
-                    recognitionLang={currentConfig.lang} // ★ 現在のモードに応じた言語を渡す
+                    recognitionLang={currentConfig.lang}
                 />
             </div>
         </div>
