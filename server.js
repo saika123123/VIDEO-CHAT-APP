@@ -27,6 +27,8 @@ const io = new Server(server, {
 const rooms = new Map();
 // ビデオ通話用：アクティブな録音セッションを管理するMap
 const activeRecordings = new Map();
+// ★ 翻訳モードを管理するMap (roomId -> mode)
+const roomTranslationModes = new Map();
 
 // クイズ用：クイズルーム管理用のMap
 const quizRooms = new Map();
@@ -292,6 +294,11 @@ io.on('connection', (socket) => {
         rooms.set(roomId, new Map());
     }
 
+    // ★ ルーム作成時に翻訳モードを初期化（なければOFF）
+    if (!roomTranslationModes.has(roomId)) {
+        roomTranslationModes.set(roomId, 'OFF');
+    }
+
     // ユーザー情報をルームに追加
     rooms.get(roomId).set(socket.id, {
         userId,
@@ -313,6 +320,10 @@ io.on('connection', (socket) => {
             initiatorName: recordingInfo.initiatorName
         });
     }
+
+    // ★ 現在の翻訳モードを新規参加者に通知
+    const currentMode = roomTranslationModes.get(roomId);
+    socket.emit('translation-mode-sync', { mode: currentMode });
 
     // ルーム参加者リストを全員に送信
     io.to(roomId).emit('users', Array.from(rooms.get(roomId).values()));
@@ -359,6 +370,15 @@ io.on('connection', (socket) => {
             userId: data.userId,
             userName: data.userName
         });
+    });
+
+    // ★★★ 翻訳モード変更イベント ★★★
+    socket.on('translation-change', ({ mode }) => {
+        console.log(`Translation mode changed in room ${roomId} to ${mode} by ${userName}`);
+        // サーバー側の状態を更新
+        roomTranslationModes.set(roomId, mode);
+        // ルーム内の全員（自分以外）に通知
+        socket.to(roomId).emit('translation-mode-changed', { mode, updatedBy: userName });
     });
 
     // 録音開始イベント
@@ -442,6 +462,11 @@ io.on('connection', (socket) => {
                 if (activeRecordings.has(roomId)) {
                     console.log(`Cleaning up recording for empty room: ${roomId}`);
                     activeRecordings.delete(roomId);
+                }
+                
+                // ★ 翻訳設定もクリーンアップ
+                if (roomTranslationModes.has(roomId)) {
+                    roomTranslationModes.delete(roomId);
                 }
             }
         }
@@ -567,6 +592,7 @@ setInterval(() => {
             console.log(`Cleaning up empty room: ${roomId}`);
             rooms.delete(roomId);
             activeRecordings.delete(roomId);
+            roomTranslationModes.delete(roomId);
         }
     });
 

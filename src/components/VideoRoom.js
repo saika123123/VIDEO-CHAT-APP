@@ -216,6 +216,12 @@ export default function VideoRoom({ roomId, userId }) {
             translationModeRef.current = nextMode;
             
             if (nextMode === 'OFF') setSubtitles([]);
+            
+            // ★ ソケットで変更を通知
+            if (socketRef.current) {
+                socketRef.current.emit('translation-change', { mode: nextMode });
+            }
+
             return nextMode;
         });
     };
@@ -632,6 +638,22 @@ export default function VideoRoom({ roomId, userId }) {
         // ★ 他ユーザーの発言を受信
         socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
             addSubtitle(content, speakerName, false);
+        });
+
+        // ★ 翻訳モード同期イベントのハンドリング
+        const updateTranslationMode = (mode) => {
+            setTranslationMode(mode);
+            translationModeRef.current = mode;
+            if (mode === 'OFF') setSubtitles([]);
+        };
+
+        socketRef.current.on('translation-mode-sync', ({ mode }) => {
+            updateTranslationMode(mode);
+        });
+
+        socketRef.current.on('translation-mode-changed', ({ mode, updatedBy }) => {
+            console.log(`Translation mode updated by ${updatedBy}: ${mode}`);
+            updateTranslationMode(mode);
         });
 
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {
@@ -1244,6 +1266,7 @@ export default function VideoRoom({ roomId, userId }) {
             </div>
 
             <div className="hidden">
+                {/* ★ isSocketConnectedプロパティを追加 */}
                 <MeetingRecorder
                     ref={meetingRecorderRef}
                     roomId={roomId}
@@ -1253,7 +1276,8 @@ export default function VideoRoom({ roomId, userId }) {
                     localStream={localStreamRef.current} 
                     socketRef={socketRef}
                     onLocalSpeech={handleLocalSpeech}
-                    recognitionLang={currentConfig.lang} // ★ 現在のモードに応じた言語を渡す
+                    recognitionLang={currentConfig.lang}
+                    isSocketConnected={connectionStatus === 'connected'}
                 />
             </div>
         </div>

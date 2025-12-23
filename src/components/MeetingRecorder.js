@@ -12,7 +12,8 @@ const keepAliveProcessor = `
   registerProcessor('keep-alive-processor', KeepAliveProcessor);
 `;
 
-const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef, onLocalSpeech, recognitionLang = 'ja-JP' }, ref) => {
+// ★ isSocketConnectedを受け取るように変更
+const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, localStream, socketRef, onLocalSpeech, recognitionLang = 'ja-JP', isSocketConnected }, ref) => {
     // State
     const [isRecording, setIsRecording] = useState(false);
     const [meetingId, setMeetingId] = useState(null);
@@ -333,8 +334,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         };
     }, [resumeAudioContext]);
     
+    // ★ 修正: isSocketConnectedを依存配列に追加し、socketRef.currentが有効になったタイミングでリスナーを登録
     useEffect(() => {
-        if (!socketRef.current) return;
+        if (!socketRef.current || !isSocketConnected) return;
+
+        logDebug('Setting up socket listeners for recording...');
 
         const handleRecordingStart = async ({ meetingId: remoteMeetingId, initiatorId, initiatorName }) => {
             logDebug(`Received recording start from ${initiatorName}`);
@@ -379,12 +383,12 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
 
         return () => {
             if (socketRef.current) {
-                socketRef.current.off('recording-started');
-                socketRef.current.off('recording-stopped');
-                socketRef.current.off('speech-data');
+                socketRef.current.off('recording-started', handleRecordingStart);
+                socketRef.current.off('recording-stopped', handleRecordingStop);
+                socketRef.current.off('speech-data', handleRemoteSpeech);
             }
         };
-    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone]);
+    }, [socketRef, isAudioOn, initializeSpeechRecognition, saveSpeechToQueue, userId, activateMicrophone, isSocketConnected]);
 
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
