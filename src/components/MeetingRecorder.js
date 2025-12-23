@@ -30,6 +30,12 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     const isRecordingRef = useRef(false);
     const manualStopRef = useRef(false);
     
+    // ★ ミュート状態をRefで管理（コールバック内で最新の値を参照するため）
+    const isAudioOnRef = useRef(isAudioOn);
+    
+    // ★ エコー対策：他人の発言を受信した時刻を記録
+    const lastRemoteSpeechTimeRef = useRef(0);
+    
     // Web Audio API Refs
     const audioContextRef = useRef(null);
     const mediaStreamSourceRef = useRef(null);
@@ -39,6 +45,30 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         const timestamp = new Date().toISOString();
         console.log(`★ [MeetingRecorder ${timestamp}] ${message}`, data || '');
     };
+
+    // isAudioOnプロップスの変更をRefに反映
+    useEffect(() => {
+        isAudioOnRef.current = isAudioOn;
+        logDebug(`Audio state changed: ${isAudioOn ? 'UNMUTED' : 'MUTED'}`);
+        
+        // 録音中であれば、ミュート状態に合わせて認識を開始/停止
+        if (isRecordingRef.current) {
+            if (isAudioOn) {
+                // ミュート解除：認識再開
+                if (recognitionRef.current) {
+                    try { recognitionRef.current.start(); } catch(e) { /* 既に開始されている場合は無視 */ }
+                } else {
+                    initializeSpeechRecognition();
+                    try { recognitionRef.current.start(); } catch(e) {}
+                }
+            } else {
+                // ミュート：認識停止
+                if (recognitionRef.current) {
+                    recognitionRef.current.stop();
+                }
+            }
+        }
+    }, [isAudioOn]); // initializeSpeechRecognition は依存配列に入れない（無限ループ防止）
 
     const resumeAudioContext = useCallback(async () => {
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -137,6 +167,20 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
     
     const handleSpeechResult = useCallback((event) => {
         if (!isRecordingRef.current) return;
+        
+        // ★ 対策1: ミュート中は結果を無視する
+        if (!isAudioOnRef.current) {
+            logDebug('Ignored speech result because mic is muted.');
+            return;
+        }
+
+        // ★ 対策2: エコー対策（直近3000ms以内に他人の発言を受信していたら無視）
+        const timeSinceLastRemote = Date.now() - lastRemoteSpeechTimeRef.current;
+        if (timeSinceLastRemote < 3000) {
+            logDebug(`Echo cancellation: Ignored local speech due to recent remote speech (${timeSinceLastRemote}ms ago)`);
+            return;
+        }
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal && event.results[i][0].transcript.trim()) {
                 const transcriptText = event.results[i][0].transcript.trim();
@@ -149,7 +193,7 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 // 自分の発言は保存する
                 saveSpeechToQueue(transcriptText, userId, userName);
                 
-                // ★ 自分の発言を親コンポーネント（字幕用）に通知
+                // 自分の発言を親コンポーネント（字幕用）に通知
                 if (onLocalSpeech) {
                     onLocalSpeech(transcriptText);
                 }
@@ -165,14 +209,15 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         recognition.continuous = true;
         recognition.interimResults = true;
         
-        // ★ 言語設定を適用
+        // 言語設定を適用
         recognition.lang = recognitionLang;
 
         recognition.onstart = () => logDebug(`Speech recognition started (${recognitionLang})`);
         
         recognition.onend = () => {
             logDebug('Speech recognition ended.');
-            if (!manualStopRef.current && isRecordingRef.current) {
+            // ★ 対策1の補強: ミュート中でない場合のみ再起動する
+            if (!manualStopRef.current && isRecordingRef.current && isAudioOnRef.current) {
                 logDebug('Restarting recognition...');
                 setTimeout(() => {
                     if (recognitionRef.current) recognitionRef.current.start();
@@ -188,19 +233,18 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
                 stopRecording(true);
             } else {
                  // 軽微なエラーは無視して継続
-                 // setError(`音声認識エラー: ${event.error}`);
             }
         };
         recognition.onresult = handleSpeechResult;
         recognitionRef.current = recognition;
     }, [handleSpeechResult, recognitionLang]);
 
-    // ★ 言語設定が変更されたら音声認識を再起動
+    // 言語設定が変更されたら音声認識を再起動
     useEffect(() => {
         if (recognitionRef.current && recognitionRef.current.lang !== recognitionLang) {
             logDebug(`Language changed to ${recognitionLang}. Restarting recognition...`);
             
-            if (isRecordingRef.current) {
+            if (isRecordingRef.current && isAudioOnRef.current) {
                 recognitionRef.current.stop();
                 recognitionRef.current.onend = null; // 既存のハンドラを無効化
                 initializeSpeechRecognition(); // 新しい設定で初期化
@@ -244,7 +288,11 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
             
             setIsRecording(true);
             isRecordingRef.current = true;
-            recognitionRef.current.start();
+            
+            // マイクがONの場合のみ認識開始
+            if (isAudioOn) {
+                recognitionRef.current.start();
+            }
 
         } catch (error) {
             console.error('Failed to start recording:', error);
@@ -362,6 +410,9 @@ const MeetingRecorder = forwardRef(({ roomId, userId, userName, isAudioOn, local
         
         const handleRemoteSpeech = ({ content, userId: speakerId, userName: speakerName }) => {
             if (isRecordingRef.current) {
+                // ★ 対策2の準備: 他人の発言を受信した時刻を記録
+                lastRemoteSpeechTimeRef.current = Date.now();
+
                 // 重複保存防止のため、ここでは保存せず画面表示の更新のみ行う
                 setTranscript(prev => [...prev, { 
                     id: Date.now().toString(), 
