@@ -634,12 +634,12 @@ export default function VideoRoom({ roomId, userId }) {
             });
         });
 
-        // ★ 他ユーザーの発言を受信
+        // ★ 他ユーザーの発言を受信（修正箇所：このリスナーを確実にここで登録）
         socketRef.current.on('speech-data', ({ content, userId: speakerId, userName: speakerName }) => {
             addSubtitle(content, speakerName, false);
         });
 
-        // ★ 他ユーザーが翻訳モードを変更した時の同期処理（追加部分）
+        // ★ 他ユーザーが翻訳モードを変更した時の同期処理（修正箇所：このリスナーを確実にここで登録）
         socketRef.current.on('translation-update', (newMode) => {
             console.log('Translation mode updated by remote user:', newMode);
             setTranslationMode(newMode);
@@ -649,6 +649,22 @@ export default function VideoRoom({ roomId, userId }) {
             if (newMode === 'OFF') {
                 setSubtitles([]);
             }
+        });
+
+        // ★ 録音機能の同期リスナーをここに移動（修正箇所：useEffectから移動して確実に登録）
+        socketRef.current.on('recording-started', ({ meetingId, initiatorId, initiatorName }) => {
+            setIsRecording(true);
+            setRecordingInitiator(initiatorName || initiatorId);
+            setRecordingErrorMessage(null);
+        });
+
+        socketRef.current.on('recording-stopped', ({ meetingId, initiatorId }) => {
+            setIsRecording(false);
+            setRecordingInitiator(null);
+        });
+
+        socketRef.current.on('recording-initiator-left', ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
+            setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
         });
 
         socketRef.current.on('offer', async ({ offer, from, isRestart }) => {
@@ -885,36 +901,8 @@ export default function VideoRoom({ roomId, userId }) {
         });
     };
 
-    useEffect(() => {
-        if (!socketRef.current) return;
-
-        const handleRecordingStarted = ({ meetingId, initiatorId, initiatorName }) => {
-            setIsRecording(true);
-            setRecordingInitiator(initiatorName || initiatorId);
-            setRecordingErrorMessage(null);
-        };
-
-        const handleRecordingStopped = ({ meetingId, initiatorId }) => {
-            setIsRecording(false);
-            setRecordingInitiator(null);
-        };
-
-        const handleRecordingInitiatorLeft = ({ meetingId, formerInitiatorId, formerInitiatorName }) => {
-            setRecordingInitiator(`${formerInitiatorName}(退出済み)`);
-        };
-
-        socketRef.current.on('recording-started', handleRecordingStarted);
-        socketRef.current.on('recording-stopped', handleRecordingStopped);
-        socketRef.current.on('recording-initiator-left', handleRecordingInitiatorLeft);
-
-        return () => {
-            if (socketRef.current) {
-                socketRef.current.off('recording-started', handleRecordingStarted);
-                socketRef.current.off('recording-stopped', handleRecordingStopped);
-                socketRef.current.off('recording-initiator-left', handleRecordingInitiatorLeft);
-            }
-        };
-    }, [socketRef?.current]);
+    // ★ 修正: 独立していた録音用useEffectを削除し、initializeSocketConnectionに統合しました。
+    // これにより、録音開始・停止や参加者退出のイベントが確実にリッスンされるようになります。
 
     if (deviceError) {
         return (
